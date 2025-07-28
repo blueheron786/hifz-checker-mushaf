@@ -1,0 +1,14 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/navigation_continue"
+        android:icon="@drawable/ic_continue"
+        android:title="Continue"
+        app:showAsAction="ifRoom"/>
+
+    <item
+        android:id="@+id/navigation_statistics"
+        android:icon="@drawable/ic_statistics"
+        android:title="Stats"/>
+</menu>

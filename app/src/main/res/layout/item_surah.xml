@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:layoutDirection="ltr"
+    android:background="@color/primary">
+
+    <!-- Surah Number (Leftmost) -->
+    <TextView
+        android:id="@+id/surahNumberTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="20sp"
+        android:textColor="@color/text_primary"
+        android:paddingStart="16dp"
+        android:paddingEnd="8dp"
+        tools:text="18"/>
+
+    <!-- English Name (Middle) -->
+    <TextView
+        android:id="@+id/englishNameTextView"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textSize="20sp"
+        android:textColor="@color/text_primary"
+        android:gravity="start"
+        android:paddingEnd="24dp"
+        tools:text="Al-Kahf"/>
+
+    <!-- Arabic Name (Right-aligned) -->
+    <TextView
+        android:id="@+id/arabicNameTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/mushaf"
+        android:textSize="32sp"
+        android:textColor="@color/text_primary"
+        android:textDirection="rtl"
+        android:gravity="end"
+        android:paddingStart="8dp"
+        android:paddingEnd="16dp"
+        tools:text="الكهف"/>
+</LinearLayout>

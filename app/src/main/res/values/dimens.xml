@@ -1,0 +1,6 @@
+<resources>
+    <dimen name="ayah_text_size">33sp</dimen>
+
+    <dimen name="toolbar_height">56dp</dimen>
+    <dimen name="header_offset">18dp</dimen>
+</resources>

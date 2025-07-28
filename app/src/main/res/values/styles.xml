@@ -1,0 +1,36 @@
+<resources>
+    <!-- Base application theme -->
+    <style name="AppTheme" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Primary brand color -->
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorPrimaryVariant">@color/accent</item>
+        <item name="colorOnPrimary">@color/text_primary</item>
+
+        <!-- Bottom Navigation styling -->
+        <item name="bottomNavigationStyle">@style/MyBottomNavigationStyle</item>
+    </style>
+
+    <style name="BasmalaText">
+        <item name="android:textSize">26sp</item> <!-- Slightly smaller -->
+        <item name="android:lineSpacingMultiplier">0.7</item> <!-- Tighter line spacing -->
+        <item name="android:fontFamily">@font/mushaf</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:includeFontPadding">false</item> <!-- Crucial -->
+        <item name="android:gravity">center</item>
+    </style>
+
+    <!-- Custom BottomNavigationView style -->
+    <style name="MyBottomNavigationStyle" parent="Widget.MaterialComponents.BottomNavigationView">
+        <item name="itemIconTint">@color/text_primary</item>
+        <item name="itemTextColor">@color/text_primary</item>
+        <item name="android:background">@color/primary_dark</item>
+        <item name="android:elevation">8dp</item>
+    </style>
+
+    <style name="AyahTextAppearance">
+        <item name="android:fontFamily">@font/mushaf</item>
+        <item name="android:textSize">@dimen/ayah_text_size</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:lineSpacingExtra">4dp</item>
+    </style>
+</resources>

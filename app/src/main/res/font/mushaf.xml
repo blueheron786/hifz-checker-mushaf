@@ -1,0 +1,10 @@
+<font-family xmlns:android="http://schemas.android.com/apk/res/android">
+    <font
+        android:fontWeight="400"
+        android:font="@font/kitab_regular" />
+</font-family>
+
+<!--
+    BACKUP: pdms_quran_font. HIDEOUS, but shows all small stops correctly.
+    See: 2:213
+-->

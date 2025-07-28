@@ -1,0 +1,4 @@
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <size android:height="8dp" /> <!-- Space between items -->
+    <solid android:color="@android:color/transparent" />
+</shape>

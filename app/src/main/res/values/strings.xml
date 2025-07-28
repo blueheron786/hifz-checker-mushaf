@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Qur\'an Habit</string>
+
+    <!-- stats values -->
+    <string name="pages_today">Today: %d pages</string>
+    <string name="pages_month">30 days: %d pages</string>
+    <string name="total_pages">Lifetime: %d pages</string>
+    <string name="streak_days">Current Streak: %d days</string>
+    <string name="time_today">Time Today: %d m</string>
+    <string name="total_time">Total Time: %d h, %d m</string>
+    <string name="reset_statistics_title">Reset Statistics</string>
+    <string name="reset_statistics_message">Are you sure you want to reset all reading statistics? This cannot be undone.</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+</resources>

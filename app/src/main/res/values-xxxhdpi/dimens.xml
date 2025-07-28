@@ -1,0 +1,3 @@
+<resources>
+    <dimen name="ayah_text_size">38sp</dimen>  <!-- Larger for high-density -->
+</resources>

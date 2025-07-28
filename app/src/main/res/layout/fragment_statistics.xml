@@ -1,0 +1,100 @@
+<androidx.core.widget.NestedScrollView
+    android:id="@+id/page_scroll_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Pages Read (Last 30 Days)"
+            android:textAppearance="?attr/textAppearanceSubtitle1"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="16dp"/>
+        
+        <TextView
+            android:id="@+id/pagesToday"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:layout_marginStart="16dp"
+            android:textSize="18sp"/>
+
+        <TextView
+            android:id="@+id/pagesMonth"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:layout_marginStart="16dp"
+            android:textSize="18sp"/>
+
+        <TextView
+            android:id="@+id/totalPages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:layout_marginStart="16dp"
+            android:textSize="18sp"/>
+
+        <TextView
+            android:id="@+id/streakDays"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:layout_marginStart="16dp"
+            android:textSize="18sp"/>
+
+        <com.quranhabit.ui.statistics.ui.BarChartView
+            android:id="@+id/monthlyPagesChart"
+            android:layout_width="match_parent"
+            android:layout_height="300dp"
+            android:layout_margin="16dp"
+            android:background="@color/primary_dark"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Time Spent Reading (Last 7 Days)"
+            android:textAppearance="?attr/textAppearanceSubtitle1"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="16dp"/>
+
+        <TextView
+            android:id="@+id/timeToday"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:layout_marginStart="16dp"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/totalTime"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:layout_marginStart="16dp"
+            android:textSize="18sp" />
+
+        <com.quranhabit.ui.statistics.ui.BarChartView
+            android:id="@+id/weeklyTimeChart"
+            android:layout_width="match_parent"
+            android:layout_height="300dp"
+            android:layout_margin="16dp"
+            android:background="@color/primary_dark"/>
+
+        <Button
+            android:id="@+id/resetButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Reset Stats"
+            android:layout_gravity="center_horizontal"/>
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>
