@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.CountDownTimer
 import android.util.Log
 import android.util.SparseIntArray
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -124,20 +125,137 @@ class QuranReaderFragment : Fragment() {
 
     private fun buildSurahMapping(pages: List<List<String>>) {
         pageToSurahMap.clear()
-        var currentSurah = 1
         
-        pages.forEachIndexed { pageIndex, lines ->
-            // Look for surah changes by detecting basmala (except for first page)
-            val hasNewSurahBasmala = lines.any { line ->
-                line.contains("بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ") && 
-                !line.contains("١") // Not the first ayah of Fatiha
+        // Standard 604-page Mushaf Uthmani mapping - page where each surah starts (0-indexed)
+        val surahStartPages = mapOf(
+            1 to 0,    // Al-Fatiha
+            2 to 1,    // Al-Baqarah  
+            3 to 49,   // Ali Imran
+            4 to 76,   // An-Nisa
+            5 to 105,  // Al-Ma'idah
+            6 to 127,  // Al-An'am
+            7 to 150,  // Al-A'raf
+            8 to 176,  // Al-Anfal
+            9 to 186,  // At-Tawbah
+            10 to 207, // Yunus
+            11 to 220, // Hud
+            12 to 234, // Yusuf
+            13 to 248, // Ar-Ra'd
+            14 to 254, // Ibrahim
+            15 to 261, // Al-Hijr
+            16 to 266, // An-Nahl
+            17 to 281, // Al-Isra
+            18 to 292, // Al-Kahf
+            19 to 304, // Maryam
+            20 to 311, // Ta-Ha
+            21 to 321, // Al-Anbiya
+            22 to 331, // Al-Hajj
+            23 to 341, // Al-Mu'minun
+            24 to 349, // An-Nur
+            25 to 359, // Al-Furqan
+            26 to 366, // Ash-Shu'ara
+            27 to 376, // An-Naml
+            28 to 385, // Al-Qasas
+            29 to 396, // Al-Ankabut
+            30 to 404, // Ar-Rum
+            31 to 410, // Luqman
+            32 to 414, // As-Sajdah
+            33 to 417, // Al-Ahzab
+            34 to 427, // Saba
+            35 to 433, // Fatir
+            36 to 440, // Ya-Sin
+            37 to 446, // As-Saffat
+            38 to 452, // Sad
+            39 to 457, // Az-Zumar
+            40 to 467, // Ghafir
+            41 to 477, // Fussilat
+            42 to 482, // Ash-Shura
+            43 to 489, // Az-Zukhruf
+            44 to 496, // Ad-Dukhan
+            45 to 498, // Al-Jathiyah
+            46 to 501, // Al-Ahqaf
+            47 to 507, // Muhammad
+            48 to 511, // Al-Fath
+            49 to 515, // Al-Hujurat
+            50 to 518, // Qaf
+            51 to 520, // Adh-Dhariyat
+            52 to 523, // At-Tur
+            53 to 526, // An-Najm
+            54 to 528, // Al-Qamar
+            55 to 531, // Ar-Rahman
+            56 to 534, // Al-Waqi'ah
+            57 to 537, // Al-Hadid
+            58 to 542, // Al-Mujadilah
+            59 to 545, // Al-Hashr
+            60 to 549, // Al-Mumtahanah
+            61 to 551, // As-Saff
+            62 to 553, // Al-Jumu'ah
+            63 to 554, // Al-Munafiqun
+            64 to 556, // At-Taghabun
+            65 to 558, // At-Talaq
+            66 to 560, // At-Tahrim
+            67 to 562, // Al-Mulk
+            68 to 564, // Al-Qalam
+            69 to 566, // Al-Haqqah
+            70 to 568, // Al-Ma'arij
+            71 to 570, // Nuh
+            72 to 572, // Al-Jinn
+            73 to 574, // Al-Muzzammil
+            74 to 575, // Al-Muddaththir
+            75 to 577, // Al-Qiyamah
+            76 to 578, // Al-Insan
+            77 to 580, // Al-Mursalat
+            78 to 582, // An-Naba
+            79 to 583, // An-Nazi'at
+            80 to 585, // Abasa
+            81 to 586, // At-Takwir
+            82 to 587, // Al-Infitar
+            83 to 587, // Al-Mutaffifin
+            84 to 589, // Al-Inshiqaq
+            85 to 590, // Al-Buruj
+            86 to 591, // At-Tariq
+            87 to 591, // Al-A'la
+            88 to 592, // Al-Ghashiyah
+            89 to 593, // Al-Fajr
+            90 to 594, // Al-Balad
+            91 to 595, // Ash-Shams
+            92 to 595, // Al-Layl
+            93 to 596, // Ad-Duha
+            94 to 596, // Ash-Sharh
+            95 to 597, // At-Tin
+            96 to 597, // Al-Alaq
+            97 to 598, // Al-Qadr
+            98 to 598, // Al-Bayyinah
+            99 to 599, // Az-Zalzalah
+            100 to 599, // Al-Adiyat
+            101 to 600, // Al-Qari'ah
+            102 to 600, // At-Takathur
+            103 to 601, // Al-Asr
+            104 to 601, // Al-Humazah
+            105 to 601, // Al-Fil
+            106 to 602, // Quraysh
+            107 to 602, // Al-Ma'un
+            108 to 602, // Al-Kawthar
+            109 to 603, // Al-Kafirun
+            110 to 603, // An-Nasr
+            111 to 603, // Al-Masad
+            112 to 604, // Al-Ikhlas
+            113 to 604, // Al-Falaq
+            114 to 604  // An-Nas
+        )
+        
+        // Build reverse mapping: for each page, find which surah it belongs to
+        for (pageIndex in 0 until pages.size) {
+            var surahForThisPage = 1 // default fallback
+            
+            // Find the highest surah number that starts on or before this page
+            for ((surah, startPage) in surahStartPages) {
+                if (startPage <= pageIndex) {
+                    surahForThisPage = surah
+                }
             }
             
-            if (pageIndex > 0 && hasNewSurahBasmala) {
-                currentSurah++
-            }
-            
-            pageToSurahMap[pageIndex] = currentSurah
+            pageToSurahMap[pageIndex] = surahForThisPage
         }
     }
 
@@ -292,12 +410,12 @@ class QuranReaderFragment : Fragment() {
                             addLineToPage(holder.binding.pageContent, remaining)
                         }
                     } else {
-                        // Add regular line
+                        // Add regular line with auto-sizing
                         addLineToPage(holder.binding.pageContent, line)
                     }
                 } else {
                     // Add minimal space for blank lines
-                    addLineToPage(holder.binding.pageContent, " ")
+                    addEmptyLine(holder.binding.pageContent)
                 }
             }
 
@@ -307,21 +425,53 @@ class QuranReaderFragment : Fragment() {
             }
         }
 
-        // Helper function to create and add TextViews for each line
+        // Helper function to create and add TextViews for each line with auto-sizing per line
         private fun addLineToPage(container: ViewGroup, text: String) {
             val textView = TextView(container.context).apply {
                 setTextAppearance(R.style.AyahTextAppearance)
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
-                )
+                ).apply {
+                    // Add some vertical spacing between lines
+                    if (this is ViewGroup.MarginLayoutParams) {
+                        bottomMargin = 2 // Small gap between lines
+                    }
+                }
+                
                 fontFeatureSettings = "'liga' on, 'clig' on"
                 layoutDirection = View.LAYOUT_DIRECTION_RTL
                 textDirection = View.TEXT_DIRECTION_RTL
                 includeFontPadding = false
+                maxLines = 1
+                isSingleLine = true
+                
+                // Add padding for better appearance
+                setPadding(16, 4, 16, 4)
+                
                 this.text = text
+                
+                // Use auto-sizing to fit each line individually
+                setAutoSizeTextTypeWithDefaults(TextView.AUTO_SIZE_TEXT_TYPE_UNIFORM)
+                setAutoSizeTextTypeUniformWithConfiguration(
+                    8,   // minimum text size in sp - quite small for long lines
+                    20,  // maximum text size in sp - reasonable max
+                    1,   // granularity in sp
+                    TypedValue.COMPLEX_UNIT_SP
+                )
             }
             container.addView(textView)
+        }
+        
+        // Helper for empty lines
+        private fun addEmptyLine(container: ViewGroup) {
+            val emptyView = View(container.context).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    8 // Small height for spacing
+                )
+            }
+            container.addView(emptyView)
         }
 
         override fun onViewRecycled(holder: PageViewHolder) {
