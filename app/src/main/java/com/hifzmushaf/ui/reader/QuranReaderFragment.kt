@@ -299,11 +299,27 @@ class QuranReaderFragment : Fragment() {
         val surah = SurahRepository.getSurahByNumber(surahNumber)
         val surahName = surah?.arabicName ?: "Unknown"
         
-        // Format: "صفحة [page number] / [surah name]"
-        binding.pageInfoTextView.text = "صفحة ${pageNumber + 1} \\ $surahName"
+        // Convert numbers to fancy Arabic-Indic numerals
+        val fancyPageNumber = convertToArabicNumerals(pageNumber + 1)
+        val fancySurahNumber = convertToArabicNumerals(surahNumber)
+        
+        // Format with fancy numerals: "صفحة [page number] / سورة [surah number] - [surah name]"
+        binding.pageInfoTextView.text = "صفحة $fancyPageNumber \\ سورة $fancySurahNumber - $surahName"
         
         // Hide the separate surah info text view since we're combining them
         binding.surahInfoTextView.text = ""
+    }
+    
+    // Helper function to convert regular numbers to Arabic-Indic numerals
+    private fun convertToArabicNumerals(number: Int): String {
+        val arabicNumerals = arrayOf("٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩")
+        return number.toString().map { digit ->
+            if (digit.isDigit()) {
+                arabicNumerals[digit.digitToInt()]
+            } else {
+                digit.toString()
+            }
+        }.joinToString("")
     }
 
     private fun startPageReadTracking() {
@@ -457,7 +473,7 @@ class QuranReaderFragment : Fragment() {
                 this.text = text
                 
                 // Use fixed text size instead of auto-sizing to ensure consistency
-                textSize = 14f // Fixed size in sp
+                textSize = 17.5f // Fixed size in sp (25% bigger than 14sp)
                 
                 // Force layout recalculation after text is set
                 post {
