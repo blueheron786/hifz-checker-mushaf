@@ -434,14 +434,12 @@ class QuranReaderFragment : Fragment() {
         private fun addLineToPage(container: ViewGroup, text: String) {
             val textView = TextView(container.context).apply {
                 setTextAppearance(R.style.AyahTextAppearance)
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
                     // Add some vertical spacing between lines
-                    if (this is ViewGroup.MarginLayoutParams) {
-                        bottomMargin = 4 // Slightly larger gap between lines for better readability
-                    }
+                    bottomMargin = 2 // Reduced gap between ayaat for tighter spacing
                 }
                 
                 fontFeatureSettings = "'liga' on, 'clig' on"
@@ -451,9 +449,11 @@ class QuranReaderFragment : Fragment() {
                 includeFontPadding = true
                 maxLines = 1
                 isSingleLine = true
+                // Add minimal line spacing
+                setLineSpacing(2f, 1.0f)
                 
                 // Increase padding to prevent text cutoff, especially for Arabic diacritics
-                setPadding(16, 12, 16, 12)
+                setPadding(16, 4, 16, 4)
                 
                 this.text = text
                 
@@ -472,9 +472,9 @@ class QuranReaderFragment : Fragment() {
         // Helper for empty lines
         private fun addEmptyLine(container: ViewGroup) {
             val emptyView = View(container.context).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    12 // Increased height for better visual spacing
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    6 // Small height for minimal spacing between sections
                 )
             }
             container.addView(emptyView)

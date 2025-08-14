@@ -6,7 +6,7 @@
     android:layout_gravity="center_horizontal"
     android:background="@color/accent"
     android:ellipsize="none"
-    android:fontFamily="@font/mushaf"
+    android:fontFamily="@font/uthman_tnb_v2"
     android:gravity="center"
     android:includeFontPadding="true"
     android:layoutDirection="rtl"

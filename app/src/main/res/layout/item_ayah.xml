@@ -3,10 +3,9 @@
     android:id="@+id/ayahTextView"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:fontFamily="@font/mushaf"
+    android:fontFamily="@font/uthman_tnb_v2"
     android:textColor="@color/text_primary"
     android:textSize="@dimen/ayah_text_size"
     android:layoutDirection="rtl"
     android:textDirection="rtl"
-    android:includeFontPadding="false"
-    android:lineSpacingExtra="4dp"/>
+    android:includeFontPadding="false" />
