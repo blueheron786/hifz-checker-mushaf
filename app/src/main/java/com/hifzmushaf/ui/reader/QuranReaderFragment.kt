@@ -284,10 +284,15 @@ class QuranReaderFragment : Fragment() {
         binding.quranPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 super.onPageSelected(position)
+                Log.d("PageChange", "Page selected: $position")
+                
                 currentPagePosition = position
                 val newPage = position
                 
                 updateHeader(pageToSurahMap[newPage] ?: 1, newPage)
+                
+                // Save position immediately when page changes
+                saveCurrentPosition(newPage)
                 
                 // Page read tracking
                 startPageReadTracking()
@@ -342,12 +347,15 @@ class QuranReaderFragment : Fragment() {
         
         val surahNumber = pageToSurahMap[pageNumber] ?: 1
         
+        // Get the current scroll position
+        val currentScrollY = getCurrentScrollPosition(pageNumber)
+        
         // Save to database
         databaseHelper.saveReadingProgress(
             surahNumber = surahNumber,
             ayahNumber = 1, // Simplified since we don't track precise ayahs
             pageNumber = pageNumber,
-            scrollY = 0
+            scrollY = currentScrollY
         )
         
         lastPageMarkedAsRead = pageNumber
@@ -358,6 +366,51 @@ class QuranReaderFragment : Fragment() {
             .putInt("lastSurah", surahNumber)
             .putInt("lastPage", pageNumber)
             .apply()
+    }
+
+    private fun saveCurrentPosition(pageNumber: Int) {
+        val surahNumber = pageToSurahMap[pageNumber] ?: 1
+        
+        // Use a small delay to ensure the view is ready
+        binding.quranPager.post {
+            val currentScrollY = getCurrentScrollPosition(pageNumber)
+            
+            Log.d("SavePosition", "Attempting to save position: page=$pageNumber, surah=$surahNumber, scrollY=$currentScrollY")
+            
+            // Save immediately to database
+            databaseHelper.saveReadingProgress(
+                surahNumber = surahNumber,
+                ayahNumber = 1, // Simplified since we don't track precise ayahs
+                pageNumber = pageNumber,
+                scrollY = currentScrollY
+            )
+        }
+    }
+
+    private fun getCurrentScrollPosition(pageNumber: Int): Int {
+        try {
+            // Get the RecyclerView from ViewPager2
+            val recyclerView = binding.quranPager.getChildAt(0) as? RecyclerView
+            if (recyclerView == null) {
+                Log.w("ScrollPosition", "RecyclerView not found")
+                return 0
+            }
+            
+            // Find the view holder for the current page
+            val viewHolder = recyclerView.findViewHolderForAdapterPosition(pageNumber) as? QuranPageAdapter.PageViewHolder
+            if (viewHolder == null) {
+                Log.w("ScrollPosition", "ViewHolder not found for page $pageNumber")
+                return 0
+            }
+            
+            val scrollY = viewHolder.binding.pageScrollView.scrollY
+            Log.d("ScrollPosition", "Got scroll position for page $pageNumber: $scrollY")
+            return scrollY
+            
+        } catch (e: Exception) {
+            Log.e("ScrollPosition", "Error getting scroll position for page $pageNumber", e)
+            return 0
+        }
     }
 
     private fun restoreScrollPosition(pageNumber: Int, scrollY: Int) {
@@ -383,6 +436,9 @@ class QuranReaderFragment : Fragment() {
     override fun onPause() {
         super.onPause()
         pageReadCheckJob?.cancel()
+        
+        // Save current position when pausing to ensure we don't lose progress
+        saveCurrentPosition(currentPagePosition)
     }
 
     override fun onDestroyView() {
@@ -523,8 +579,20 @@ class QuranReaderFragment : Fragment() {
     // Simplified database helper
     private inner class DatabaseHelper {
         fun saveReadingProgress(surahNumber: Int, ayahNumber: Int, pageNumber: Int, scrollY: Int) {
-            // Implementation for saving progress
-            // This would save to your Room database
+            // Save to Room database using lifecycleScope
+            lifecycleScope.launch {
+                try {
+                    lastReadRepo.savePosition(
+                        surah = surahNumber,
+                        ayah = ayahNumber,
+                        page = pageNumber,
+                        scrollY = scrollY
+                    )
+                    Log.d("DatabaseHelper", "Saved reading progress: page=$pageNumber, surah=$surahNumber, scrollY=$scrollY")
+                } catch (e: Exception) {
+                    Log.e("DatabaseHelper", "Failed to save reading progress", e)
+                }
+            }
         }
 
         fun cleanup() {
