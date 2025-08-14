@@ -6,9 +6,4 @@
         android:icon="@drawable/ic_continue"
         android:title="Continue"
         app:showAsAction="ifRoom"/>
-
-    <item
-        android:id="@+id/navigation_statistics"
-        android:icon="@drawable/ic_statistics"
-        android:title="Stats"/>
 </menu>

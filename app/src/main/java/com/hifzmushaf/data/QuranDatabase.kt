@@ -5,7 +5,6 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.quranhabit.data.dao.LastReadPositionDao
-import com.quranhabit.data.dao.StatisticsDao
 import com.quranhabit.data.entity.LastReadPosition
 import com.quranhabit.data.entity.PagesReadOnDay
 
@@ -15,7 +14,6 @@ import com.quranhabit.data.entity.PagesReadOnDay
     exportSchema = false
 )
 abstract class QuranDatabase : RoomDatabase() {
-    abstract fun statisticsDao(): StatisticsDao
     abstract fun lastReadPositionDao(): LastReadPositionDao
 
     companion object {
