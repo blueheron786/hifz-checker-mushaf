@@ -13,5 +13,5 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:layoutDirection="rtl"
-        android:padding="16dp"/>
+        android:padding="20dp"/>
 </androidx.core.widget.NestedScrollView>
