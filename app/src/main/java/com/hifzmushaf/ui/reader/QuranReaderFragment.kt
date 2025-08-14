@@ -439,11 +439,18 @@ class QuranReaderFragment : Fragment() {
         
         // Save current position when pausing to ensure we don't lose progress
         saveCurrentPosition(currentPagePosition)
+        
+        // Show bottom navigation when pausing (in case user navigates away)
+        (requireActivity() as? MainActivity)?.setBottomNavVisibility(true)
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         pageReadCheckJob?.cancel()
+        
+        // Show the bottom navigation again when leaving the reader
+        (requireActivity() as? MainActivity)?.setBottomNavVisibility(true)
+        
         if (::databaseHelper.isInitialized) {
             databaseHelper.cleanup()
         }
