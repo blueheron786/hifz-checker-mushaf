@@ -3,6 +3,8 @@ package com.hifzmushaf.ui.reader
 import android.content.Context
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.util.Log
 import android.util.SparseIntArray
 import android.util.TypedValue
@@ -315,7 +317,75 @@ class QuranReaderFragment : Fragment() {
         binding.surahInfoTextView.text = ""
     }
     
-    // Helper function to convert regular numbers to Arabic-Indic numerals
+    // Helper function to predict text dimensions and optimal font size
+    private fun predictTextFit(text: String, availableWidth: Int, availableHeight: Int, maxFontSize: Float = 18f, minFontSize: Float = 8f): Float {
+        val textPaint = TextPaint().apply {
+            typeface = resources.getFont(R.font.uthman_tnb_v2)
+            isAntiAlias = true
+        }
+        
+        // Binary search for optimal font size
+        var low = minFontSize
+        var high = maxFontSize
+        var bestSize = minFontSize
+        
+        while (low <= high) {
+            val midSize = (low + high) / 2f
+            textPaint.textSize = midSize
+            
+            // Create StaticLayout to measure actual text layout
+            val staticLayout = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                StaticLayout.Builder.obtain(text, 0, text.length, textPaint, availableWidth)
+                    .setAlignment(android.text.Layout.Alignment.ALIGN_NORMAL)
+                    .setLineSpacing(0f, 0.85f) // Match our tight line spacing
+                    .setIncludePad(false)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                StaticLayout(text, textPaint, availableWidth, 
+                    android.text.Layout.Alignment.ALIGN_NORMAL, 0.85f, 0f, false)
+            }
+            
+            val textHeight = staticLayout.height
+            val textWidth = staticLayout.width
+            
+            // Check if text fits within available space
+            if (textHeight <= availableHeight && textWidth <= availableWidth) {
+                bestSize = midSize
+                low = midSize + 0.5f // Try larger size
+            } else {
+                high = midSize - 0.5f // Try smaller size
+            }
+        }
+        
+        Log.d("TextFit", "Text: '${text.take(50)}...' | Available: ${availableWidth}x${availableHeight} | Best size: $bestSize")
+        return bestSize
+    }
+
+    // Helper function to measure actual text dimensions at given font size
+    private fun measureText(text: String, fontSize: Float, availableWidth: Int): Pair<Int, Int> {
+        val textPaint = TextPaint().apply {
+            textSize = fontSize
+            typeface = resources.getFont(R.font.uthman_tnb_v2)
+            isAntiAlias = true
+        }
+        
+        val staticLayout = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            StaticLayout.Builder.obtain(text, 0, text.length, textPaint, availableWidth)
+                .setAlignment(android.text.Layout.Alignment.ALIGN_NORMAL)
+                .setLineSpacing(0f, 0.85f)
+                .setIncludePad(false)
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            StaticLayout(text, textPaint, availableWidth, 
+                android.text.Layout.Alignment.ALIGN_NORMAL, 0.85f, 0f, false)
+        }
+        
+        return Pair(staticLayout.width, staticLayout.height)
+    }
+
+    // Convert numbers to Arabic-Indic numerals
     private fun convertToArabicNumerals(number: Int): String {
         val arabicNumerals = arrayOf("٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩")
         return number.toString().map { digit ->
@@ -509,7 +579,7 @@ class QuranReaderFragment : Fragment() {
             }
         }
 
-        // Helper function to create and add TextViews for each line with auto-sizing per line
+        // Helper function to create and add TextViews for each line with intelligent font sizing
         private fun addLineToPage(container: ViewGroup, text: String) {
             val textView = TextView(container.context).apply {
                 setTextAppearance(R.style.AyahTextAppearance)
@@ -535,8 +605,20 @@ class QuranReaderFragment : Fragment() {
                 
                 this.text = text
                 
-                // Use fixed text size instead of auto-sizing to ensure consistency
-                textSize = 17.5f // Fixed size in sp (25% bigger than 14sp)
+                // Get available width (accounting for container padding)
+                val availableWidth = container.width - container.paddingLeft - container.paddingRight
+                val maxHeight = 200 // Maximum height we want for a single ayah
+                
+                if (availableWidth > 0) {
+                    // Use intelligent font sizing based on actual text measurement
+                    val optimalFontSize = fragment.predictTextFit(text, availableWidth, maxHeight)
+                    textSize = optimalFontSize
+                    
+                    Log.d("FontSizing", "Text: '${text.take(30)}...' | Width: $availableWidth | Font: $optimalFontSize")
+                } else {
+                    // Fallback to fixed size if width not available yet
+                    textSize = 17.5f
+                }
                 
                 // Force layout recalculation after text is set
                 post {
