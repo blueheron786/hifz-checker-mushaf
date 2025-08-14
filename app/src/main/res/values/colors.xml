@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Primary Theme Colors -->
-    <color name="accent">#9061f2</color>
+    <color name="accent">#6161f2</color>
     <!-- Background Colors -->
     <color name="primary">#968dc3</color>
     <color name="primary_dark">#bfbfe0</color>

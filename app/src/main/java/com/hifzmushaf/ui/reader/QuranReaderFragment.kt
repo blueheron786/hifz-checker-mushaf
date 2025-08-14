@@ -297,8 +297,13 @@ class QuranReaderFragment : Fragment() {
 
     private fun updateHeader(surahNumber: Int, pageNumber: Int) {
         val surah = SurahRepository.getSurahByNumber(surahNumber)
-        binding.surahInfoTextView.text = surah?.arabicName ?: "Unknown"
-        binding.pageInfoTextView.text = "صفحة ${pageNumber + 1}"
+        val surahName = surah?.arabicName ?: "Unknown"
+        
+        // Format: "صفحة [page number] / [surah name]"
+        binding.pageInfoTextView.text = "صفحة ${pageNumber + 1} \\ $surahName"
+        
+        // Hide the separate surah info text view since we're combining them
+        binding.surahInfoTextView.text = ""
     }
 
     private fun startPageReadTracking() {
