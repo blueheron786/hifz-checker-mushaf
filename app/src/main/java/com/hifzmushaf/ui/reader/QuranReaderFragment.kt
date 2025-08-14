@@ -396,7 +396,9 @@ class QuranReaderFragment : Fragment() {
         override fun onBindViewHolder(holder: PageViewHolder, position: Int) {
             if (position !in 0 until allPages.size) return
 
+            // Completely clear and reset the page content
             holder.binding.pageContent.removeAllViews()
+            holder.binding.pageContent.invalidate()
 
             val pageLines = allPages[position]
             
@@ -418,10 +420,8 @@ class QuranReaderFragment : Fragment() {
                         // Add regular line with auto-sizing
                         addLineToPage(holder.binding.pageContent, line)
                     }
-                } else {
-                    // Add minimal space for blank lines
-                    addEmptyLine(holder.binding.pageContent)
                 }
+                // Skip empty lines completely - don't add any spacing for them
             }
 
             // Restore scroll position
@@ -434,40 +434,47 @@ class QuranReaderFragment : Fragment() {
         private fun addLineToPage(container: ViewGroup, text: String) {
             val textView = TextView(container.context).apply {
                 setTextAppearance(R.style.AyahTextAppearance)
+                // Use simple layout params without margins - control spacing differently
                 layoutParams = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
                     android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    // Add some vertical spacing between lines
-                    bottomMargin = 1 // Minimal gap between ayaat for very tight spacing
-                }
+                )
                 
                 fontFeatureSettings = "'liga' on, 'clig' on"
                 layoutDirection = View.LAYOUT_DIRECTION_RTL
                 textDirection = View.TEXT_DIRECTION_RTL
-                // Enable font padding to prevent text clipping
+                // Disable font padding completely
                 includeFontPadding = false
-                // Remove single line constraint to prevent text cutoff
+                // Allow multiple lines but with tight spacing
                 maxLines = Int.MAX_VALUE
                 isSingleLine = false
-                // Minimal line spacing
-                setLineSpacing(0f, 0.9f)
+                // Very tight line spacing - negative extra spacing
+                setLineSpacing(-2f, 0.85f)
                 
-                // Minimal padding to save space
-                setPadding(8, 2, 8, 2)
+                // No padding at all to eliminate spacing
+                setPadding(0, 0, 0, 0)
                 
                 this.text = text
                 
-                // Use auto-sizing with smaller font range to prevent text cutoff
-                setAutoSizeTextTypeWithDefaults(TextView.AUTO_SIZE_TEXT_TYPE_UNIFORM)
-                setAutoSizeTextTypeUniformWithConfiguration(
-                    8,   // minimum text size in sp - smaller minimum
-                    18,  // maximum text size in sp - much smaller maximum to fit more text
-                    1,   // granularity in sp
-                    TypedValue.COMPLEX_UNIT_SP
-                )
+                // Use fixed text size instead of auto-sizing to ensure consistency
+                textSize = 14f // Fixed size in sp
+                
+                // Force layout recalculation after text is set
+                post {
+                    requestLayout()
+                    invalidate()
+                }
             }
             container.addView(textView)
+            
+            // Add a minimal spacer view after each text view for controlled spacing
+            val spacer = View(container.context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    1 // Just 1dp spacing between ayaat
+                )
+            }
+            container.addView(spacer)
         }
         
         // Helper for empty lines
@@ -489,6 +496,8 @@ class QuranReaderFragment : Fragment() {
                     scrollPositions.put(position, scrollY)
                 }
             }
+            // Completely clear the page content to ensure clean recycling
+            holder.binding.pageContent.removeAllViews()
             super.onViewRecycled(holder)
         }
 

@@ -11,7 +11,7 @@
     android:includeFontPadding="true"
     android:layoutDirection="rtl"
     android:maxLines="1"
-    android:padding="12dp"
+    android:padding="4dp"
     android:text="﷽"
     android:textColor="@color/text_primary"
     android:textStyle="bold"
