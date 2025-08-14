@@ -1,6 +1,6 @@
-package com.quranhabit.data
+package com.hifzmushaf.data
 
-import com.quranhabit.ui.surah.Surah
+import com.hifzmushaf.ui.surah.Surah
 
 object SurahRepository {
     fun getSurahList(): List<Surah> = listOf(

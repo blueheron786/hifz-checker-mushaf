@@ -1,4 +1,4 @@
-package com.quranhabit.utils
+package com.hifzmushaf.utils
 
 import androidx.room.TypeConverter
 import java.time.LocalDate

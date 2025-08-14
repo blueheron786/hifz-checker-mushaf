@@ -1,4 +1,4 @@
-package com.quranhabit.ui.reader
+package com.hifzmushaf.ui.reader
 
 import android.util.Log
 import androidx.core.widget.NestedScrollView

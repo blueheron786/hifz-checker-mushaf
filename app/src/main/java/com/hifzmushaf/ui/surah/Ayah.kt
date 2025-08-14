@@ -1,4 +1,4 @@
-package com.quranhabit.ui.surah
+package com.hifzmushaf.ui.surah
 
 data class Ayah(
     val surahNumber: Int,

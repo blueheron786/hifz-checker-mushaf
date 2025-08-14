@@ -1,10 +1,10 @@
-package com.quranhabit.data.dao
+package com.hifzmushaf.data.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import com.quranhabit.data.entity.LastReadPosition
+import com.hifzmushaf.data.entity.LastReadPosition
 
 @Dao
 interface LastReadPositionDao {

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Qur\'an Habit</string>
+    <string name="app_name">Hifz Mushaf</string>
 
     <!-- stats values -->
     <string name="pages_today">Today: %d pages</string>

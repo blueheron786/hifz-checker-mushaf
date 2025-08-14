@@ -4,7 +4,7 @@
 
     <fragment
         android:id="@+id/surahListFragment"
-        android:name="com.quranhabit.ui.surah.SurahListFragment"
+        android:name="com.hifzmushaf.ui.surah.SurahListFragment"
         android:label="Surah List">
 
         <action
@@ -18,7 +18,7 @@
 
     <fragment
         android:id="@+id/quranReaderFragment"
-        android:name="com.quranhabit.ui.reader.QuranReaderFragment"
+        android:name="com.hifzmushaf.ui.reader.QuranReaderFragment"
         android:label="Quran Reader">
         <argument android:name="surahNumber" android:defaultValue="1"/>
         <argument android:name="pageNumber" android:defaultValue="1"/>

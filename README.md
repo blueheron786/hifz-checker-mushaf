@@ -1,5 +1,5 @@
-# Qur'an Habit
+# Hifz Mushaf
 
-Qur'an Habit helps you track pages read and time spent each day. See your progress with clear graphs and stay consistent toward your monthly goal. No ads, no notifications, no distractions—just your and the book of Allah.
+Hifz Mushaf helps you check your memorization by showing you blanks in the mushaf.
 
-The Qur'an text is [from Tanzil](https://tanzil.net/download/).
+The Qur'an text is from the 15 line Mushaf.

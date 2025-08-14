@@ -1,7 +1,7 @@
-package com.quranhabit
+package com.hifzmushaf
 
 import android.app.Application
-import com.quranhabit.data.QuranDatabase
+import com.hifzmushaf.data.QuranDatabase
 
 class QuranApplication : Application() {
 

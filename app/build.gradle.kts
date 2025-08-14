@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.quranhabit"
+    namespace = "com.hifzmushaf"
     compileSdk = 35
 
     buildFeatures {
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.quranhabit"
+        applicationId = "com.hifzmushaf"
         minSdk = 26
         targetSdk = 35
         versionCode = 4

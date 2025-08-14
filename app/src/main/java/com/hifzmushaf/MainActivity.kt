@@ -1,13 +1,13 @@
-package com.quranhabit
+package com.hifzmushaf
 
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.quranhabit.ui.hideWithAnimation
-import com.quranhabit.ui.reader.QuranReaderFragment
-import com.quranhabit.ui.showWithAnimation
-import com.quranhabit.ui.surah.SurahListFragment
+import com.hifzmushaf.ui.hideWithAnimation
+import com.hifzmushaf.ui.reader.QuranReaderFragment
+import com.hifzmushaf.ui.showWithAnimation
+import com.hifzmushaf.ui.surah.SurahListFragment
 
 class MainActivity : AppCompatActivity() {
     private var lastPage: Int? = null

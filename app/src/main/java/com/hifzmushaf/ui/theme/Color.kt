@@ -1,4 +1,4 @@
-package com.quranhabit.ui.theme
+package com.hifzmushaf.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

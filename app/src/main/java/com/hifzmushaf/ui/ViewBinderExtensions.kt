@@ -1,4 +1,4 @@
-package com.quranhabit.ui
+package com.hifzmushaf.ui
 
 import androidx.fragment.app.Fragment
 import androidx.viewbinding.ViewBinding

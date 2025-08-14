@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.QuranHabit" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+    <style name="Theme.HifzMushaf" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
         <!-- Primary brand color -->
         <item name="colorPrimary">@color/accent</item>
         <item name="colorPrimaryVariant">@color/accent</item>
@@ -11,14 +11,14 @@
         <item name="android:colorBackground">@color/primary_dark</item>
 
         <!-- Button styles -->
-        <item name="materialButtonStyle">@style/Widget.QuranHabit.Button</item>
+        <item name="materialButtonStyle">@style/Widget.HifzMushaf.Button</item>
 
         <!-- action bar -->
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
     </style>
 
-    <style name="Widget.QuranHabit.Button" parent="Widget.MaterialComponents.Button">
+    <style name="Widget.HifzMushaf.Button" parent="Widget.MaterialComponents.Button">
         <item name="backgroundTint">@color/accent</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="cornerRadius">16dp</item>

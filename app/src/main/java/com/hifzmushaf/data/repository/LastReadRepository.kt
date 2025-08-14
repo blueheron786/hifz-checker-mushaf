@@ -1,7 +1,7 @@
-package com.quranhabit.data.repository
+package com.hifzmushaf.data.repository
 
-import com.quranhabit.data.dao.LastReadPositionDao
-import com.quranhabit.data.entity.LastReadPosition
+import com.hifzmushaf.data.dao.LastReadPositionDao
+import com.hifzmushaf.data.entity.LastReadPosition
 
 class LastReadRepository(private val dao: LastReadPositionDao) {
     suspend fun savePosition(surah: Int, ayah: Int, page: Int, scrollY: Int) {

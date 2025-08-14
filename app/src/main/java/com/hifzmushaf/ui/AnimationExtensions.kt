@@ -1,4 +1,4 @@
-package com.quranhabit.ui
+package com.hifzmushaf.ui
 
 import android.view.View
 import com.google.android.material.bottomnavigation.BottomNavigationView

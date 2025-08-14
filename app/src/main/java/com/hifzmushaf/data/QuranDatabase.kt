@@ -1,12 +1,12 @@
-package com.quranhabit.data
+package com.hifzmushaf.data
 
 import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import com.quranhabit.data.dao.LastReadPositionDao
-import com.quranhabit.data.entity.LastReadPosition
-import com.quranhabit.data.entity.PagesReadOnDay
+import com.hifzmushaf.data.dao.LastReadPositionDao
+import com.hifzmushaf.data.entity.LastReadPosition
+import com.hifzmushaf.data.entity.PagesReadOnDay
 
 @Database(
     entities = [PagesReadOnDay::class, LastReadPosition::class],

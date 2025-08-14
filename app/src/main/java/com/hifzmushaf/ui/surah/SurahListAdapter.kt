@@ -1,4 +1,4 @@
-package com.quranhabit.ui.surah
+package com.hifzmushaf.ui.surah
 
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -11,11 +11,11 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.quranhabit.R
-import com.quranhabit.data.SurahRepository
-import com.quranhabit.databinding.FragmentSurahListBinding
-import com.quranhabit.databinding.ItemSurahBinding
-import com.quranhabit.ui.reader.QuranReaderFragment
+import com.hifzmushaf.R
+import com.hifzmushaf.data.SurahRepository
+import com.hifzmushaf.databinding.FragmentSurahListBinding
+import com.hifzmushaf.databinding.ItemSurahBinding
+import com.hifzmushaf.ui.reader.QuranReaderFragment
 
 class SurahListFragment : Fragment() {
 

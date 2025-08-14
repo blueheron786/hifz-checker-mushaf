@@ -16,7 +16,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_marginTop="@dimen/header_offset"
 
-        app:title="Quran Habit"
+        app:title="Hifz Mushaf"
         app:titleTextColor="@color/text_primary"/>
 
     <!-- NavHostFragment - Make sure it starts below toolbar -->

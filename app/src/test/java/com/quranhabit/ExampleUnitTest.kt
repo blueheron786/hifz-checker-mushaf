@@ -1,4 +1,4 @@
-package com.quranhabit
+package com.hifzmushaf
 
 import org.junit.Test
 

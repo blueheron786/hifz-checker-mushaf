@@ -1,4 +1,4 @@
-package com.quranhabit.ui.theme
+package com.hifzmushaf.ui.theme
 
 import android.app.Activity
 import android.os.Build
@@ -34,7 +34,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun QuranHabitTheme(
+fun HifzMushafTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Dynamic color is available on Android 12+
     dynamicColor: Boolean = true,
