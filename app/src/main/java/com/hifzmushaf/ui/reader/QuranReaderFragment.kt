@@ -440,27 +440,28 @@ class QuranReaderFragment : Fragment() {
                 ).apply {
                     // Add some vertical spacing between lines
                     if (this is ViewGroup.MarginLayoutParams) {
-                        bottomMargin = 2 // Small gap between lines
+                        bottomMargin = 4 // Slightly larger gap between lines for better readability
                     }
                 }
                 
                 fontFeatureSettings = "'liga' on, 'clig' on"
                 layoutDirection = View.LAYOUT_DIRECTION_RTL
                 textDirection = View.TEXT_DIRECTION_RTL
-                includeFontPadding = false
+                // Enable font padding to prevent text clipping
+                includeFontPadding = true
                 maxLines = 1
                 isSingleLine = true
                 
-                // Add padding for better appearance
-                setPadding(16, 4, 16, 4)
+                // Increase padding to prevent text cutoff, especially for Arabic diacritics
+                setPadding(16, 12, 16, 12)
                 
                 this.text = text
                 
-                // Use auto-sizing to fit each line individually
+                // Use auto-sizing to fit each line individually with better range
                 setAutoSizeTextTypeWithDefaults(TextView.AUTO_SIZE_TEXT_TYPE_UNIFORM)
                 setAutoSizeTextTypeUniformWithConfiguration(
-                    8,   // minimum text size in sp - quite small for long lines
-                    20,  // maximum text size in sp - reasonable max
+                    10,  // minimum text size in sp - prevent too small text
+                    28,  // maximum text size in sp - allow larger text when space permits
                     1,   // granularity in sp
                     TypedValue.COMPLEX_UNIT_SP
                 )
@@ -473,7 +474,7 @@ class QuranReaderFragment : Fragment() {
             val emptyView = View(container.context).apply {
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    8 // Small height for spacing
+                    12 // Increased height for better visual spacing
                 )
             }
             container.addView(emptyView)
