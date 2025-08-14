@@ -2,15 +2,23 @@ package com.hifzmushaf
 
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.hifzmushaf.data.QuranDatabase
+import com.hifzmushaf.data.repository.LastReadRepository
 import com.hifzmushaf.ui.hideWithAnimation
 import com.hifzmushaf.ui.reader.QuranReaderFragment
 import com.hifzmushaf.ui.showWithAnimation
 import com.hifzmushaf.ui.surah.SurahListFragment
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     private var lastPage: Int? = null
+    
+    private val lastReadRepo by lazy {
+        LastReadRepository(QuranDatabase.getDatabase(this).lastReadPositionDao())
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,16 +48,40 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openReaderAtLastPage() {
-        val page = lastPage ?: 1 // default to first page
-        val args = Bundle().apply {
-            putInt("pageNumber", page)
+        lifecycleScope.launch {
+            try {
+                val lastPosition = lastReadRepo.getLastPosition()
+                val args = Bundle().apply {
+                    if (lastPosition != null) {
+                        putInt("surahNumber", lastPosition.surah)
+                        putInt("ayahNumber", lastPosition.ayah)
+                        putInt("pageNumber", lastPosition.page)
+                        putInt("scrollY", lastPosition.scrollY)
+                        putBoolean("fromContinue", true)
+                    } else {
+                        // If no last position, default to first page
+                        putInt("pageNumber", lastPage ?: 0)
+                    }
+                }
+                supportFragmentManager.beginTransaction()
+                    .replace(R.id.nav_host_fragment, QuranReaderFragment().apply {
+                        arguments = args
+                    })
+                    .addToBackStack("reader")
+                    .commit()
+            } catch (e: Exception) {
+                // Fallback to old behavior if database fails
+                val args = Bundle().apply {
+                    putInt("pageNumber", lastPage ?: 0)
+                }
+                supportFragmentManager.beginTransaction()
+                    .replace(R.id.nav_host_fragment, QuranReaderFragment().apply {
+                        arguments = args
+                    })
+                    .addToBackStack("reader")
+                    .commit()
+            }
         }
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.nav_host_fragment, QuranReaderFragment().apply {
-                arguments = args
-            })
-            .addToBackStack("reader")
-            .commit()
     }
 
     fun rememberPage(page: Int) {

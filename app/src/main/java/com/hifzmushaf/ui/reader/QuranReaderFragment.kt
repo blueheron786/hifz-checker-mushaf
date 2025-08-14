@@ -132,31 +132,52 @@ class QuranReaderFragment : Fragment() {
                 binding.quranPager.setCurrentItem(page, false)
             }
 
-            binding.quranPager.post {
-                try {
-                    val recyclerView = binding.quranPager.getChildAt(0) as? RecyclerView
-                    val viewHolder = recyclerView?.findViewHolderForAdapterPosition(page) as? QuranPageAdapter.PageViewHolder
-                    val scrollView = viewHolder?.binding?.pageScrollView
+            // Use a longer delay and retry mechanism to ensure ViewHolder is ready
+            fun attemptScroll(attempts: Int = 0) {
+                if (attempts >= 10) {
+                    Log.e("ScrollError", "Failed to scroll after max attempts")
+                    return
+                }
+                
+                binding.quranPager.post {
+                    try {
+                        val recyclerView = binding.quranPager.getChildAt(0) as? RecyclerView
+                        val viewHolder = recyclerView?.findViewHolderForAdapterPosition(page) as? QuranPageAdapter.PageViewHolder
+                        val scrollView = viewHolder?.binding?.pageScrollView
 
-                    scrollView?.post {
-                        try {
-                            Log.d("SCROLL_DEBUG", "Scrolling to saved pos $scrollY")
-                            // Prevent marking as read during restoration
-                            viewHolder.scrollTracker?.isProgrammaticScroll = true
-                            scrollView.scrollTo(0, scrollY)
-                            // Reset the flag after a delay
-                            scrollView.postDelayed({
-                                viewHolder.scrollTracker?.isProgrammaticScroll = false
-                            }, 500)
-                        } catch (e: Exception) {
-                            Log.e("ScrollError", "Failed to scroll", e)
-                            scrollView.scrollTo(0, 0)
+                        if (scrollView != null && viewHolder.scrollTracker != null) {
+                            scrollView.post {
+                                try {
+                                    Log.d("SCROLL_DEBUG", "Scrolling to saved pos $scrollY (attempt ${attempts + 1})")
+                                    // Prevent marking as read during restoration
+                                    viewHolder.scrollTracker?.isProgrammaticScroll = true
+                                    scrollView.scrollTo(0, scrollY)
+                                    // Reset the flag after a delay
+                                    scrollView.postDelayed({
+                                        viewHolder.scrollTracker?.isProgrammaticScroll = false
+                                    }, 500)
+                                } catch (e: Exception) {
+                                    Log.e("ScrollError", "Failed to scroll", e)
+                                    scrollView.scrollTo(0, 0)
+                                }
+                            }
+                        } else {
+                            // ViewHolder not ready, retry after a short delay
+                            binding.quranPager.postDelayed({
+                                attemptScroll(attempts + 1)
+                            }, 100)
                         }
+                    } catch (e: Exception) {
+                        Log.e("QuranReader", "Page setup failed", e)
+                        // Retry after a short delay
+                        binding.quranPager.postDelayed({
+                            attemptScroll(attempts + 1)
+                        }, 100)
                     }
-                } catch (e: Exception) {
-                    Log.e("QuranReader", "Page setup failed", e)
                 }
             }
+            
+            attemptScroll()
         } catch (e: Exception) {
             Log.e("QuranReader", "Scroll failed", e)
         }
