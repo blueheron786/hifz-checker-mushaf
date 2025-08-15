@@ -2,9 +2,13 @@
 <resources>
     <!-- Primary Theme Colors -->
     <color name="accent">#6161f2</color>
+    <color name="primary_color">#968dc3</color>
+    
     <!-- Background Colors -->
     <color name="primary">#968dc3</color>
     <color name="primary_dark">#bfbfe0</color>
+    <color name="background_color">#f5f5f5</color>
+    <color name="page_background">#ffffff</color>
 
     <!-- Text Colors -->
     <color name="text_primary">#200040</color>
