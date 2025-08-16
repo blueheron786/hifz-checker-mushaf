@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">searchtruth.com</domain>
+        <domain includeSubdomains="true">quran.com</domain>
+        <domain includeSubdomains="true">images.quran.com</domain>
+        <domain includeSubdomains="true">tanzil.net</domain>
+    </domain-config>
+</network-security-config>

@@ -19,10 +19,12 @@ class QuranImagePageAdapterV2(
 
     companion object {
         private const val TAG = "QuranImagePageAdapterV2"
+        private const val MAX_CACHED_PAGES = 10  // Limit cache size to prevent OOM
     }
     
     // Cache for QuranImagePage views to reuse them efficiently
     private val pageViewCache = mutableMapOf<Int, QuranImagePage>()
+    private val accessOrder = mutableListOf<Int>()  // Track access order for LRU
 
     inner class QuranImagePageViewHolder(val binding: ItemQuranImagePageV2Binding) : 
         RecyclerView.ViewHolder(binding.root) {
@@ -35,11 +37,8 @@ class QuranImagePageAdapterV2(
             // Remove any existing page view
             binding.pageContainer.removeAllViews()
             
-            // Get or create QuranImagePage
-            quranImagePage = pageViewCache[pageNumber] ?: QuranImagePage(binding.root.context).also {
-                Log.d(TAG, "🆕 Creating new QuranImagePage for page $pageNumber")
-                pageViewCache[pageNumber] = it
-            }
+            // Get or create QuranImagePage with cache management
+            quranImagePage = getOrCreatePageView(pageNumber)
             
             // Configure the page view
             quranImagePage?.let { pageView ->
@@ -93,10 +92,41 @@ class QuranImagePageAdapterV2(
     override fun onViewRecycled(holder: QuranImagePageViewHolder) {
         // Clean up the page view but don't remove from cache
         holder.quranImagePage?.cleanup()
+        holder.binding.pageContainer.removeAllViews()
         super.onViewRecycled(holder)
+        Log.d(TAG, "♻️ ViewHolder recycled")
     }
 
     override fun getItemCount() = totalPages
+    
+    /**
+     * Gets or creates a page view with LRU cache management
+     */
+    private fun getOrCreatePageView(pageNumber: Int): QuranImagePage {
+        // Update access order
+        accessOrder.remove(pageNumber)
+        accessOrder.add(pageNumber)
+        
+        // Get existing or create new
+        val pageView = pageViewCache[pageNumber] ?: run {
+            Log.d(TAG, "🆕 Creating new QuranImagePage for page $pageNumber")
+            
+            // Check if we need to evict old pages
+            if (pageViewCache.size >= MAX_CACHED_PAGES) {
+                val oldestPage = accessOrder.removeFirst()
+                pageViewCache.remove(oldestPage)?.let { oldPageView ->
+                    Log.d(TAG, "🗑️ Evicting old page $oldestPage from cache")
+                    oldPageView.cleanup()
+                }
+            }
+            
+            val newPageView = QuranImagePage(fragment.requireContext())
+            pageViewCache[pageNumber] = newPageView
+            newPageView
+        }
+        
+        return pageView
+    }
     
     /**
      * Updates masked mode for all currently bound views

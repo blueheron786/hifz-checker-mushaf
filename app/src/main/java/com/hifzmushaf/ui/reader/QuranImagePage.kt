@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -48,9 +49,52 @@ class QuranImagePage @JvmOverloads constructor(
         private const val PAGE_IMAGES_CACHE_DIR = "quran_pages"
         private const val WORD_IMAGES_CACHE_DIR = "quran_words"
         
-        // Image dimensions
-        private const val PAGE_IMAGE_WIDTH = 1800
-        private const val PAGE_IMAGE_HEIGHT = 2700
+        // Reduced image dimensions to save memory
+        private const val PAGE_IMAGE_WIDTH = 400  // Much smaller placeholders
+        private const val PAGE_IMAGE_HEIGHT = 600
+        
+        // Shared JSON object for all instances to avoid loading multiple times
+        @Volatile
+        private var sharedWordImageUrls: JSONObject? = null
+        
+        // Lock for thread-safe JSON loading
+        private val jsonLoadLock = Any()
+        
+        /**
+         * Loads the JSON data once for all instances
+         */
+        private fun ensureJsonLoaded(context: Context) {
+            if (sharedWordImageUrls != null) return
+            
+            synchronized(jsonLoadLock) {
+                if (sharedWordImageUrls != null) return // Double-check
+                
+                try {
+                    Log.d(TAG, "🔄 Loading shared word image URLs JSON...")
+                    val inputStream = context.resources.openRawResource(R.raw.blackimageswordbyword)
+                    val jsonString = inputStream.bufferedReader().use { it.readText() }
+                    sharedWordImageUrls = JSONObject(jsonString)
+                    Log.d(TAG, "✅ Successfully loaded shared word image URLs JSON")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Failed to load word image URLs JSON: ${e.message}")
+                }
+            }
+        }
+        
+        /**
+         * Gets the URL for a specific word image - thread-safe
+         */
+        fun getWordImageUrl(context: Context, surah: Int, ayah: Int, word: Int): String? {
+            ensureJsonLoaded(context)
+            return try {
+                val key = "$surah:$ayah:$word"
+                val wordData = sharedWordImageUrls?.getJSONObject(key)
+                wordData?.getString("text")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to get URL for word $surah:$ayah:$word: ${e.message}")
+                null
+            }
+        }
     }
 
     // Properties
@@ -69,6 +113,9 @@ class QuranImagePage @JvmOverloads constructor(
     private var originalPageBitmap: Bitmap? = null
     private var maskedPageBitmap: Bitmap? = null
     private var currentRevealedBitmap: Bitmap? = null
+    
+    // Coroutine job to cancel background operations
+    private var downloadJob: kotlinx.coroutines.Job? = null
     
     init {
         scaleType = ScaleType.FIT_CENTER
@@ -106,26 +153,45 @@ class QuranImagePage @JvmOverloads constructor(
     }
 
     /**
+     * Public method to set page number and load the page
+     */
+    fun setPageNumber(pageNum: Int) {
+        pageNumber = pageNum
+        loadPageImage()
+    }
+
+    /**
      * Loads the page image from cache or downloads it
      */
     private fun loadPageImage() {
         Log.d(TAG, "🖼️ Loading page image for page: $pageNumber")
         
-        CoroutineScope(Dispatchers.IO).launch {
+        // Check memory pressure before starting
+        imageCache.checkMemoryPressure()
+        
+        // Cancel any existing download
+        downloadJob?.cancel()
+        
+        downloadJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 // Immediately show placeholder to indicate loading
                 withContext(Dispatchers.Main) {
                     setOriginalBitmap(createPlaceholderBitmap())
                 }
                 
-                // First try to load from cache
-                val cachedBitmap = imageCache.getPageImage(pageNumber)
-                if (cachedBitmap != null) {
-                    Log.d(TAG, "✅ Found cached image for page $pageNumber")
-                    withContext(Dispatchers.Main) {
-                        setOriginalBitmap(cachedBitmap)
+                // Force regeneration for debugging lower pages to test database
+                if (pageNumber <= 10) {
+                    Log.d(TAG, "🔄 Forcing regeneration for debugging page $pageNumber - skipping cache")
+                } else {
+                    // First try to load from cache for higher pages
+                    val cachedBitmap = imageCache.getPageImage(pageNumber)
+                    if (cachedBitmap != null) {
+                        Log.d(TAG, "✅ Found cached image for page $pageNumber")
+                        withContext(Dispatchers.Main) {
+                            setOriginalBitmap(cachedBitmap)
+                        }
+                        return@launch
                     }
-                    return@launch
                 }
 
                 Log.d(TAG, "⬇️ No cached image, downloading for page $pageNumber")
@@ -160,56 +226,157 @@ class QuranImagePage @JvmOverloads constructor(
      * Downloads page image from multiple sources with fallback
      */
     private suspend fun downloadPageImage(pageNumber: Int): Bitmap? {
-        val pageNumberPadded = pageNumber.toString().padStart(3, '0')
+        Log.d(TAG, "🌐 Starting proper page assembly for page $pageNumber")
         
-        // Try multiple sources in order of preference
-        val imageSources = listOf(
-            "$QPC_BASE_URL/$pageNumberPadded.gif",
-            "$QPC_ALT_URL/page_$pageNumberPadded.png",
-            "https://images.quran.com/pages/page_$pageNumberPadded.png",
-            "https://www.searchtruth.com/quran/images2/large/page-$pageNumberPadded.gif"
-        )
-        
-        for (imageUrl in imageSources) {
-            try {
-                Log.d(TAG, "Trying to download page image from: $imageUrl")
-                
-                val url = URL(imageUrl)
-                val connection = url.openConnection() as HttpURLConnection
-                connection.doInput = true
-                connection.connectTimeout = 10000
-                connection.readTimeout = 20000
-                connection.setRequestProperty("User-Agent", "QuranImageReader/2.0")
-                connection.connect()
-
-                if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                    val inputStream = connection.inputStream
-                    val bitmap = BitmapFactory.decodeStream(inputStream)
-                    inputStream.close()
-                    connection.disconnect()
-                    
-                    if (bitmap != null) {
-                        Log.d(TAG, "Successfully downloaded page image for page $pageNumber from: $imageUrl")
-                        return bitmap
-                    }
-                } else {
-                    Log.w(TAG, "HTTP ${connection.responseCode} for URL: $imageUrl")
-                }
-                connection.disconnect()
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to download from $imageUrl: ${e.message}")
-                continue
+        try {
+            // 1. Get words for this page from database
+            val qpcDataManager = QpcDataManager(context)
+            val wordsForPage = qpcDataManager.getWordsForPage(pageNumber)
+            
+            if (wordsForPage.isEmpty()) {
+                Log.w(TAG, "⚠️ No words found for page $pageNumber in database")
+                return createPageReadyPlaceholder(pageNumber)
             }
+            
+            Log.d(TAG, "📊 Found ${wordsForPage.size} words for page $pageNumber")
+            
+            // 2. Calculate page dimensions based on word positions
+            val maxX = wordsForPage.maxOfOrNull { it.x + it.width } ?: 1000f
+            val maxY = wordsForPage.maxOfOrNull { it.y + it.height } ?: 1500f
+            val pageWidth = (maxX + 50).toInt()  // Add some padding
+            val pageHeight = (maxY + 50).toInt()
+            
+            Log.d(TAG, "📐 Page dimensions: ${pageWidth}x${pageHeight}")
+            
+            // 3. Create a canvas to assemble the page
+            val pageBitmap = Bitmap.createBitmap(pageWidth, pageHeight, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(pageBitmap)
+            
+            // 4. Fill with background color (cream/white)
+            canvas.drawColor(Color.parseColor("#FFF8DC"))
+            
+            // 5. Download and place each word at its correct position
+            var successfulWords = 0
+            var cachedWords = 0
+            
+            for (word in wordsForPage) {
+                try {
+                    val wordKey = "${word.surah}/${word.ayah}/${word.word}"
+                    
+                    // Check if word is already cached
+                    var wordBitmap = imageCache.getWordImage(wordKey)
+                    if (wordBitmap != null) {
+                        cachedWords++
+                    } else {
+                        // Get URL and download word image
+                        val wordUrl = getWordImageUrl(context, word.surah, word.ayah, word.word)
+                        if (wordUrl != null) {
+                            wordBitmap = downloadWordImage(wordUrl, wordKey)
+                            if (wordBitmap != null) {
+                                // Cache the word for future use
+                                imageCache.cacheWordImage(wordKey, wordBitmap)
+                            }
+                        }
+                    }
+                    
+                    // Place word on page if we have the image
+                    if (wordBitmap != null) {
+                        val destRect = android.graphics.RectF(
+                            word.x,
+                            word.y, 
+                            word.x + word.width,
+                            word.y + word.height
+                        )
+                        canvas.drawBitmap(wordBitmap, null, destRect, null)
+                        successfulWords++
+                    } else {
+                        Log.w(TAG, "⚠️ Could not get image for word ${word.surah}:${word.ayah}:${word.word}")
+                    }
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Error processing word ${word.surah}:${word.ayah}:${word.word}: ${e.message}")
+                }
+            }
+            
+            Log.d(TAG, "✅ Page assembly complete: $successfulWords/${wordsForPage.size} words placed ($cachedWords from cache)")
+            
+            return if (successfulWords > 0) {
+                pageBitmap
+            } else {
+                // If no words were placed, return a placeholder
+                pageBitmap.recycle()
+                createPageReadyPlaceholder(pageNumber)
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "💥 Error assembling page $pageNumber: ${e.message}", e)
+            return createPlaceholderBitmap()
         }
-        
-        Log.e(TAG, "Failed to download page $pageNumber from all sources")
-        return null
+    }
+    
+    /**
+     * Downloads a single word image efficiently
+     */
+    private suspend fun downloadWordImage(url: String, wordKey: String): Bitmap? {
+        return try {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.doInput = true
+            connection.connectTimeout = 5000   // Shorter timeout for individual words
+            connection.readTimeout = 10000
+            connection.setRequestProperty("User-Agent", "QuranImageReader/2.0")
+            connection.setRequestProperty("Accept", "image/*")
+            
+            Log.d(TAG, "🔗 Downloading word $wordKey from: $url")
+            connection.connect()
+
+            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                val inputStream = connection.inputStream
+                
+                // Use efficient decoding for small word images
+                val options = BitmapFactory.Options().apply {
+                    inPreferredConfig = Bitmap.Config.ARGB_8888  // Keep quality for text
+                    inPurgeable = true
+                    inInputShareable = true
+                }
+                
+                val bitmap = BitmapFactory.decodeStream(inputStream, null, options)
+                inputStream.close()
+                connection.disconnect()
+                
+                if (bitmap != null) {
+                    Log.d(TAG, "✅ Downloaded word $wordKey (${bitmap.width}x${bitmap.height})")
+                    return bitmap
+                } else {
+                    Log.e(TAG, "❌ Failed to decode word image: $wordKey")
+                }
+            } else {
+                Log.w(TAG, "⚠️ HTTP ${connection.responseCode} for word: $wordKey")
+            }
+            connection.disconnect()
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "💥 Exception downloading word $wordKey: ${e.message}")
+            null
+        }
     }
 
     /**
      * Sets the original bitmap and creates masked version if needed
      */
     private fun setOriginalBitmap(bitmap: Bitmap) {
+        // Recycle old bitmaps to free memory
+        if (originalPageBitmap != null && originalPageBitmap != bitmap) {
+            originalPageBitmap?.recycle()
+        }
+        if (maskedPageBitmap != null) {
+            maskedPageBitmap?.recycle()
+            maskedPageBitmap = null
+        }
+        if (currentRevealedBitmap != null) {
+            currentRevealedBitmap?.recycle()
+            currentRevealedBitmap = null
+        }
+        
         originalPageBitmap = bitmap
         
         // Create masked version if we have word boundaries
@@ -273,7 +440,12 @@ class QuranImagePage @JvmOverloads constructor(
      * Creates a placeholder bitmap with page information
      */
     private fun createPlaceholderBitmap(): Bitmap {
-        val bitmap = Bitmap.createBitmap(PAGE_IMAGE_WIDTH, PAGE_IMAGE_HEIGHT, Bitmap.Config.ARGB_8888)
+        // Create very small placeholder to save memory
+        val bitmap = Bitmap.createBitmap(
+            200,  // Much smaller
+            300,  // Much smaller
+            Bitmap.Config.RGB_565  // Use less memory
+        )
         val canvas = Canvas(bitmap)
         
         // Background - light cream color
@@ -283,14 +455,14 @@ class QuranImagePage @JvmOverloads constructor(
         val borderPaint = Paint().apply {
             color = Color.parseColor("#DDDDDD")
             style = Paint.Style.STROKE
-            strokeWidth = 8f
+            strokeWidth = 4f
         }
-        canvas.drawRect(20f, 20f, bitmap.width - 20f, bitmap.height - 20f, borderPaint)
+        canvas.drawRect(10f, 10f, bitmap.width - 10f, bitmap.height - 10f, borderPaint)
         
         // Text paint
         val textPaint = Paint().apply {
             color = Color.parseColor("#666666")
-            textSize = 72f
+            textSize = 36f
             textAlign = Paint.Align.CENTER
             isAntiAlias = true
         }
@@ -299,36 +471,74 @@ class QuranImagePage @JvmOverloads constructor(
         canvas.drawText(
             "صفحة $pageNumber",
             bitmap.width / 2f,
-            bitmap.height / 2f - 150f,
+            bitmap.height / 2f - 75f,
             textPaint
         )
         
         // Draw page number in English
-        textPaint.textSize = 48f
+        textPaint.textSize = 24f
         canvas.drawText(
             "Page $pageNumber",
             bitmap.width / 2f,
-            bitmap.height / 2f - 50f,
+            bitmap.height / 2f - 25f,
             textPaint
         )
         
         // Draw status message
-        textPaint.textSize = 36f
+        textPaint.textSize = 18f
         textPaint.color = Color.parseColor("#999999")
         canvas.drawText(
-            "Loading Quran image...",
+            "Loading...",
             bitmap.width / 2f,
-            bitmap.height / 2f + 100f,
+            bitmap.height / 2f + 50f,
             textPaint
         )
         
-        // Draw debugging info
-        textPaint.textSize = 24f
-        textPaint.color = Color.parseColor("#AAAAAA")
+        return bitmap
+    }
+    
+    /**
+     * Creates a small placeholder indicating page is ready with cached words
+     */
+    private fun createPageReadyPlaceholder(pageNumber: Int): Bitmap {
+        // Create very small placeholder for memory efficiency
+        val bitmap = Bitmap.createBitmap(200, 300, Bitmap.Config.RGB_565)
+        val canvas = Canvas(bitmap)
+        
+        // Background - light green indicating success
+        canvas.drawColor(Color.parseColor("#F0FFF0"))
+        
+        // Border
+        val borderPaint = Paint().apply {
+            color = Color.parseColor("#90EE90")
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+        }
+        canvas.drawRect(5f, 5f, bitmap.width - 5f, bitmap.height - 5f, borderPaint)
+        
+        // Text paint
+        val textPaint = Paint().apply {
+            color = Color.parseColor("#006400")
+            textSize = 16f
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+        }
+        
+        // Draw page number
         canvas.drawText(
-            "If this persists, check network connection",
+            "Page $pageNumber",
             bitmap.width / 2f,
-            bitmap.height / 2f + 200f,
+            bitmap.height / 2f - 10f,
+            textPaint
+        )
+        
+        // Draw ready status
+        textPaint.textSize = 12f
+        textPaint.color = Color.parseColor("#228B22")
+        canvas.drawText(
+            "Words Cached ✓",
+            bitmap.width / 2f,
+            bitmap.height / 2f + 15f,
             textPaint
         )
         
@@ -348,9 +558,13 @@ class QuranImagePage @JvmOverloads constructor(
                 var wordBitmap = imageCache.getWordImage(wordImageKey)
                 
                 if (wordBitmap == null) {
-                    wordBitmap = downloadWordImage(word)
-                    if (wordBitmap != null) {
-                        imageCache.cacheWordImage(wordImageKey, wordBitmap)
+                    // Get URL from JSON and download using the new method
+                    val wordUrl = getWordImageUrl(context, word.surah, word.ayah, word.word)
+                    if (wordUrl != null) {
+                        wordBitmap = downloadWordImage(wordUrl, wordImageKey)
+                        if (wordBitmap != null) {
+                            imageCache.cacheWordImage(wordImageKey, wordBitmap)
+                        }
                     }
                 }
                 
@@ -362,42 +576,6 @@ class QuranImagePage @JvmOverloads constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "Error revealing word: $word", e)
             }
-        }
-    }
-
-    /**
-     * Downloads word image from BlackImagesWordByWord
-     */
-    private suspend fun downloadWordImage(word: WordBoundary): Bitmap? {
-        return try {
-            val imageUrl = "$BLACK_IMAGES_WORD_BY_WORD_BASE_URL/${word.surah}/${word.ayah}/${word.word}.png"
-            
-            Log.d(TAG, "Downloading word image from: $imageUrl")
-            
-            val url = URL(imageUrl)
-            val connection = url.openConnection() as HttpURLConnection
-            connection.doInput = true
-            connection.connectTimeout = 10000
-            connection.readTimeout = 20000
-            connection.setRequestProperty("User-Agent", "QuranImageReader/2.0")
-            connection.connect()
-
-            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                val inputStream = connection.inputStream
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream.close()
-                connection.disconnect()
-                
-                Log.d(TAG, "Successfully downloaded word image: ${word.surah}/${word.ayah}/${word.word}")
-                bitmap
-            } else {
-                Log.w(TAG, "HTTP ${connection.responseCode} when downloading word image")
-                connection.disconnect()
-                null
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error downloading word image", e)
-            null
         }
     }
 
@@ -498,10 +676,36 @@ class QuranImagePage @JvmOverloads constructor(
      * Cleans up resources
      */
     fun cleanup() {
+        // Cancel any ongoing downloads
+        downloadJob?.cancel()
+        
+        // Recycle bitmaps to free memory
         currentRevealedBitmap?.recycle()
         currentRevealedBitmap = null
         
-        // Don't recycle original bitmaps as they might be cached
+        maskedPageBitmap?.recycle()
+        maskedPageBitmap = null
+        
+        // Don't recycle original bitmap if it might be cached
+        if (originalPageBitmap != null) {
+            val pageImageCached = imageCache.getPageImage(pageNumber) != null
+            if (!pageImageCached) {
+                originalPageBitmap?.recycle()
+            }
+            originalPageBitmap = null
+        }
+        
+        // Remove any pending callbacks
         removeCallbacks(null)
+        
+        Log.d(TAG, "🧹 Cleaned up resources for page $pageNumber")
+    }
+    
+    /**
+     * Called when the view is detached from window
+     */
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        cleanup()
     }
 }

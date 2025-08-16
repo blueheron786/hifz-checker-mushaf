@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView
+    android:id="@+id/page_scroll_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <com.hifzmushaf.ui.reader.QuranImagePage
+        android:id="@+id/quranWordByWordPage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+</androidx.core.widget.NestedScrollView>

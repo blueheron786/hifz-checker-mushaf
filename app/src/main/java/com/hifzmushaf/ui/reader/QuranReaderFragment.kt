@@ -64,16 +64,14 @@ class QuranReaderFragment : Fragment() {
 
     private val cachedPages by lazy {
         try {
-            val json = loadTextFromRaw(R.raw.black_images_word_by_word)
-            val pages = Gson().fromJson<List<List<String>>>(
-                json,
-                object : TypeToken<List<List<String>>>() {}.type
-            )
+            // For now, return empty list since the old black_images_word_by_word.json 
+            // was expecting a different format than our new blackimageswordbyword.json
+            val emptyPages = emptyList<List<String>>()
             
             // Build surah mapping while loading
-            buildSurahMapping(pages)
+            buildSurahMapping(emptyPages)
             
-            pages
+            emptyPages
         } catch (e: Exception) {
             Log.e(TAG, "Error loading pages data", e)
             // Return empty pages as fallback
@@ -86,6 +84,7 @@ class QuranReaderFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
+        Log.d("QuranReaderFragment", "🔄 Creating QuranReaderFragment view")
         _binding = FragmentQuranReaderBinding.inflate(inflater, container, false)
         return binding.root
     }
@@ -277,6 +276,7 @@ class QuranReaderFragment : Fragment() {
             fragment = this,
             allPages = allPages
         )
+        Log.d("QuranReaderFragment", "📚 Created QuranPageAdapter with ${allPages.size} pages")
 
         binding.quranPager.adapter = pageAdapter
         binding.quranPager.layoutDirection = View.LAYOUT_DIRECTION_RTL
@@ -552,33 +552,24 @@ class QuranReaderFragment : Fragment() {
         override fun onBindViewHolder(holder: PageViewHolder, position: Int) {
             if (position !in 0 until allPages.size) return
 
-            // Completely clear and reset the page content
+            // NEW: Use QuranImagePage for word-by-word display
+            Log.d("QuranPageAdapter", "🔄 Setting up word-by-word page $position")
+            
+            // Clear existing content
             holder.binding.pageContent.removeAllViews()
             holder.binding.pageContent.invalidate()
 
-            val pageLines = allPages[position]
+            // Create and add QuranImagePage
+            val quranImagePage = com.hifzmushaf.ui.reader.QuranImagePage(holder.binding.root.context)
+            quranImagePage.layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            )
             
-            pageLines.forEach { line ->
-                if (line.isNotEmpty()) {
-                    // Check if line contains basmala
-                    if (line.contains("بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ") && !line.contains("١")) {
-                        // Add basmala layout
-                        val basmalaView = LayoutInflater.from(holder.binding.root.context)
-                            .inflate(R.layout.item_basmala, holder.binding.pageContent, false)
-                        holder.binding.pageContent.addView(basmalaView)
-                        
-                        // Add remaining text if any
-                        val remaining = line.trim().removePrefix("بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ").trim()
-                        if (remaining.isNotEmpty()) {
-                            addLineToPage(holder.binding.pageContent, remaining)
-                        }
-                    } else {
-                        // Add regular line with auto-sizing
-                        addLineToPage(holder.binding.pageContent, line)
-                    }
-                }
-                // Skip empty lines completely - don't add any spacing for them
-            }
+            // Set the page number (1-based)
+            quranImagePage.setPageNumber(position + 1)
+            
+            holder.binding.pageContent.addView(quranImagePage)
 
             // Restore scroll position
             holder.binding.pageScrollView.post {

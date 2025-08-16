@@ -18,8 +18,8 @@ class QuranImageCache(private val context: Context) {
         private const val TAG = "QuranImageCache"
         private const val PAGE_IMAGES_CACHE_DIR = "quran_pages"
         private const val WORD_IMAGES_CACHE_DIR = "quran_words"
-        private const val MEMORY_CACHE_SIZE = 50 * 1024 * 1024 // 50MB
-        private const val DISK_CACHE_SIZE = 500 * 1024 * 1024L // 500MB
+        private const val MEMORY_CACHE_SIZE = 10 * 1024 * 1024 // Small memory cache for active words only
+        // NO DISK CACHE LIMIT - cache grows infinitely as user reads the Qur'an
     }
 
     // Memory cache for bitmaps
@@ -50,8 +50,28 @@ class QuranImageCache(private val context: Context) {
     }
 
     init {
-        // Clean up old cache if it's too large
-        cleanupDiskCache()
+        // NO cleanup - let word cache grow infinitely!
+        // Only clean up corrupted files if found
+        cleanupCorruptedFiles()
+    }
+
+    /**
+     * Clears all cached images to force regeneration
+     */
+    fun clearAllCache() {
+        Log.d(TAG, "🧹 Clearing all cache to force regeneration")
+        
+        // Clear memory cache
+        memoryCache.evictAll()
+        
+        // Clear disk cache
+        try {
+            pageImagesDir.listFiles()?.forEach { it.delete() }
+            wordImagesDir.listFiles()?.forEach { it.delete() }
+            Log.d(TAG, "✅ All cache cleared successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error clearing cache", e)
+        }
     }
 
     /**
@@ -184,6 +204,48 @@ class QuranImageCache(private val context: Context) {
     fun clearMemoryCache() {
         memoryCache.evictAll()
         Log.d(TAG, "Memory cache cleared")
+        
+        // Force garbage collection
+        System.gc()
+    }
+
+    /**
+     * Triggers aggressive memory cleanup
+     */
+    fun performMemoryCleanup() {
+        Log.d(TAG, "🧹 Performing aggressive memory cleanup")
+        
+        // Clear half of memory cache
+        val currentSize = memoryCache.size()
+        val targetSize = currentSize / 2
+        
+        // This is a simplified cleanup - LruCache will handle LRU eviction
+        memoryCache.trimToSize(targetSize)
+        
+        // Force garbage collection
+        System.gc()
+        
+        Log.d(TAG, "📊 Memory cleanup complete. Cache size reduced from $currentSize to ${memoryCache.size()}")
+    }
+
+    /**
+     * Checks if we're running low on memory and performs cleanup if needed
+     */
+    fun checkMemoryPressure() {
+        val runtime = Runtime.getRuntime()
+        val maxMemory = runtime.maxMemory()
+        val totalMemory = runtime.totalMemory()
+        val freeMemory = runtime.freeMemory()
+        val usedMemory = totalMemory - freeMemory
+        
+        val memoryUsagePercent = (usedMemory.toDouble() / maxMemory.toDouble()) * 100
+        
+        if (memoryUsagePercent > 80) {
+            Log.w(TAG, "⚠️ High memory usage: ${memoryUsagePercent.toInt()}% - performing cleanup")
+            performMemoryCleanup()
+        } else {
+            Log.d(TAG, "📊 Memory usage: ${memoryUsagePercent.toInt()}% - OK")
+        }
     }
 
     /**
@@ -255,45 +317,46 @@ class QuranImageCache(private val context: Context) {
     }
 
     /**
-     * Cleans up disk cache if it exceeds the maximum size
+     * Cleans up only corrupted files, not based on size limits
      */
-    private fun cleanupDiskCache() {
+    private fun cleanupCorruptedFiles() {
         try {
-            val totalSize = calculateDirectorySize(pageImagesDir) + calculateDirectorySize(wordImagesDir)
-            
-            if (totalSize > DISK_CACHE_SIZE) {
-                Log.d(TAG, "Disk cache size ($totalSize bytes) exceeds limit, cleaning up...")
-                
-                // Remove oldest files from page cache first
-                val pageFiles = pageImagesDir.listFiles()
-                    ?.sortedBy { it.lastModified() }
-                    ?: emptyList()
-                
-                var deletedSize = 0L
-                for (file in pageFiles) {
-                    if (totalSize - deletedSize <= DISK_CACHE_SIZE * 0.8) break
-                    deletedSize += file.length()
+            // Check page cache for corrupted files
+            pageImagesDir.listFiles()?.forEach { file ->
+                try {
+                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                    if (bitmap == null) {
+                        Log.d(TAG, "Removing corrupted page cache file: ${file.name}")
+                        file.delete()
+                    } else {
+                        bitmap.recycle()
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "Removing corrupted page cache file: ${file.name}")
                     file.delete()
                 }
-                
-                // If still too large, remove oldest word images
-                if (totalSize - deletedSize > DISK_CACHE_SIZE * 0.8) {
-                    val wordFiles = wordImagesDir.walkTopDown()
-                        .filter { it.isFile }
-                        .sortedBy { it.lastModified() }
-                        .toList()
-                    
-                    for (file in wordFiles) {
-                        if (totalSize - deletedSize <= DISK_CACHE_SIZE * 0.8) break
-                        deletedSize += file.length()
+            }
+            
+            // Check word cache for corrupted files (sample check, not exhaustive)
+            wordImagesDir.walkTopDown()
+                .filter { it.isFile && it.extension == "png" }
+                .take(100) // Only check first 100 files to avoid long startup
+                .forEach { file ->
+                    try {
+                        val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                        if (bitmap == null) {
+                            Log.d(TAG, "Removing corrupted word cache file: ${file.name}")
+                            file.delete()
+                        } else {
+                            bitmap.recycle()
+                        }
+                    } catch (e: Exception) {
+                        Log.d(TAG, "Removing corrupted word cache file: ${file.name}")
                         file.delete()
                     }
                 }
-                
-                Log.d(TAG, "Cleaned up $deletedSize bytes from disk cache")
-            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error during disk cache cleanup", e)
+            Log.e(TAG, "Error during corrupted file cleanup", e)
         }
     }
 
