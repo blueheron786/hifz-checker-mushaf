@@ -57,21 +57,28 @@ class QuranReaderFragment : Fragment() {
     private lateinit var pageAdapter: QuranPageAdapter
 
     companion object {
+        private const val TAG = "QuranReaderFragment"
         private const val PAGE_READ_DELAY_MS = 3000L
         private const val PAGE_READ_CHECK_INTERVAL = 1000L
     }
 
     private val cachedPages by lazy {
-        val json = loadTextFromRaw(R.raw.text)
-        val pages = Gson().fromJson<List<List<String>>>(
-            json,
-            object : TypeToken<List<List<String>>>() {}.type
-        )
-        
-        // Build surah mapping while loading
-        buildSurahMapping(pages)
-        
-        pages
+        try {
+            val json = loadTextFromRaw(R.raw.black_images_word_by_word)
+            val pages = Gson().fromJson<List<List<String>>>(
+                json,
+                object : TypeToken<List<List<String>>>() {}.type
+            )
+            
+            // Build surah mapping while loading
+            buildSurahMapping(pages)
+            
+            pages
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading pages data", e)
+            // Return empty pages as fallback
+            emptyList<List<String>>()
+        }
     }
 
     override fun onCreateView(

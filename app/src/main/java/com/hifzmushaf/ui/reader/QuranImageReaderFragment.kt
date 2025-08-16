@@ -76,6 +76,8 @@ class QuranImageReaderFragment : Fragment() {
     private val binding get() = _binding!!
     private var currentPagePosition = 0
     private lateinit var pageAdapter: QuranImagePageAdapter
+    private lateinit var pageAdapterV2: QuranImagePageAdapterV2
+    private var usingV2Adapter = false
     private var maskedModeEnabled = false // Start in normal mode to show images immediately
 
     companion object {
@@ -92,34 +94,40 @@ class QuranImageReaderFragment : Fragment() {
         return binding.root
     }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         (requireActivity() as AppCompatActivity).supportActionBar?.hide()
         super.onViewCreated(view, savedInstanceState)
 
         // Load the last marked page so we don't double-mark as read
         val prefs = requireContext().getSharedPreferences("QuranPrefs", Context.MODE_PRIVATE)
-        lastPageMarkedAsRead = prefs.getInt("lastPageMarked", -1)
+        lastPageMarkedAsRead = prefs.getInt("lastPageMarkedAsRead", -1)
 
-        // Initialize database
-        lastReadRepo = LastReadRepository(QuranDatabase.getDatabase(requireContext()).lastReadPositionDao())
-        
-        // Initialize QPC data manager
+        // Initialize database helpers
+        val database = QuranDatabase.getDatabase(requireContext())
+        lastReadRepo = LastReadRepository(database.lastReadPositionDao())
+        databaseHelper = DatabaseHelper()
         qpcDataManager = QpcDataManager(requireContext())
 
-        // Initialize data
+        // Load word boundaries and page info
         loadWordBoundaries()
 
-        // Get arguments
-        currentSurahNumber = arguments?.getInt("surahNumber") ?: 1
-        val page = arguments?.getInt("pageNumber")?.takeIf { it != 0 } ?: findFirstPageForSurah(currentSurahNumber)
-
-        setupViewPager(page)
-        updateHeader(currentSurahNumber, page)
-        setupPageChangeListener()
+        // Set up fragment UI
         setupModeToggle()
-
-        // Initialize database helper
-        databaseHelper = DatabaseHelper()
+        
+        // Debug: Test connectivity to new image sources and ensure V2 adapter is used
+        Log.d(TAG, "QuranImageReaderFragment initialized")
+        Log.d(TAG, "Using V2 adapter: ${QuranImagePageMigration.shouldUseV2Adapter(requireContext())}")
+        
+        // Force enable V2 adapter for testing
+        QuranImagePageMigration.enableV2Adapter(requireContext())
+        Log.d(TAG, "Forced V2 adapter enabled")
+        
+        // Initialize ViewPager with current page
+        val initialPage = arguments?.getInt("pageNumber", 1) ?: 1
+        Log.d(TAG, "Setting up ViewPager with initial page: $initialPage")
+        setupViewPager(initialPage)
+        
+        // Enable this for debugging: QuranImagePageDebugger.runFullConnectivityTest(requireContext())
     }
 
     private fun loadWordBoundaries() {
@@ -195,13 +203,45 @@ class QuranImageReaderFragment : Fragment() {
     }
 
     private fun setupViewPager(initialPage: Int) {
-        pageAdapter = QuranImagePageAdapter(
-            fragment = this,
-            totalPages = totalPages,
-            pageInfoMap = pageInfoMap
-        )
+        // Force use of V2 adapter for debugging
+        QuranImagePageMigration.enableV2Adapter(requireContext())
+        usingV2Adapter = true // Force V2 for debugging
+        
+        Log.d(TAG, "Setting up ViewPager with V2 adapter forced ON")
+        Log.d(TAG, "Total pages: $totalPages")
+        Log.d(TAG, "PageInfoMap size: ${pageInfoMap.size}")
+        Log.d(TAG, "Initial page: $initialPage")
+        
+        if (usingV2Adapter) {
+            // Use the new V2 adapter with enhanced features
+            pageAdapterV2 = QuranImagePageAdapterV2(
+                fragment = this,
+                totalPages = totalPages,
+                pageInfoMap = pageInfoMap
+            )
+            
+            Log.d(TAG, "📋 Created V2 adapter with $totalPages pages")
+            
+            binding.quranImagePager.adapter = pageAdapterV2
+            
+            Log.d(TAG, "📎 Adapter attached to ViewPager2")
+            
+            // Perform migration if needed
+            QuranImagePageMigration.migrateExistingCache(requireContext())
+            
+            Log.d(TAG, "✅ Using QuranImagePageAdapterV2 with enhanced features")
+        } else {
+            // Use the original adapter for compatibility
+            pageAdapter = QuranImagePageAdapter(
+                fragment = this,
+                totalPages = totalPages,
+                pageInfoMap = pageInfoMap
+            )
+            binding.quranImagePager.adapter = pageAdapter
+            
+            Log.d(TAG, "⚠️ Using original QuranImagePageAdapter")
+        }
 
-        binding.quranImagePager.adapter = pageAdapter
         binding.quranImagePager.layoutDirection = View.LAYOUT_DIRECTION_RTL
         binding.quranImagePager.setCurrentItem(initialPage - 1, false) // Convert to 0-based
 
@@ -247,12 +287,19 @@ class QuranImageReaderFragment : Fragment() {
     private fun toggleMaskedMode() {
         maskedModeEnabled = !maskedModeEnabled
         
-        // Clear adapter cache to force reload
-        if (::pageAdapter.isInitialized) {
-            pageAdapter.clearCache()
-            
-            // Refresh current page
-            pageAdapter.notifyItemChanged(currentPagePosition)
+        if (usingV2Adapter) {
+            // Update V2 adapter
+            if (::pageAdapterV2.isInitialized) {
+                pageAdapterV2.updateMaskedMode(maskedModeEnabled)
+            }
+        } else {
+            // Clear V1 adapter cache to force reload
+            if (::pageAdapter.isInitialized) {
+                pageAdapter.clearCache()
+                
+                // Refresh current page
+                pageAdapter.notifyItemChanged(currentPagePosition)
+            }
         }
         
         updateModeIndicator()
@@ -280,6 +327,16 @@ class QuranImageReaderFragment : Fragment() {
     }
 
     fun isMaskedMode(): Boolean = maskedModeEnabled
+    
+    fun onWordClicked(word: WordBoundary) {
+        Log.d(TAG, "Word clicked: ${word.text} - Surah ${word.surah}, Ayah ${word.ayah}, Word ${word.word}")
+        
+        // You can add additional logic here such as:
+        // - Playing audio for the word
+        // - Showing word translation/meaning
+        // - Highlighting related words
+        // - Tracking learning progress
+    }
 
     private fun convertToArabicNumerals(number: Int): String {
         val arabicNumerals = arrayOf("٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩")
@@ -376,7 +433,9 @@ class QuranImageReaderFragment : Fragment() {
         (requireActivity() as? MainActivity)?.setBottomNavVisibility(true)
         
         // Clear bitmap cache to prevent memory leaks
-        if (::pageAdapter.isInitialized) {
+        if (usingV2Adapter && ::pageAdapterV2.isInitialized) {
+            pageAdapterV2.clearCache()
+        } else if (::pageAdapter.isInitialized) {
             pageAdapter.clearCache()
         }
         
