@@ -160,7 +160,15 @@ class QuranImageReaderFragment : Fragment() {
     private fun buildPageInfoMap() {
         pageInfoMap = wordBoundaries.groupBy { it.page }.mapValues { (pageNum, words) ->
             val surahNumber = words.firstOrNull()?.surah ?: 1
+            Log.d(TAG, "📄 Page $pageNum: ${words.size} words, surah: $surahNumber")
             PageInfo(pageNum, surahNumber, words.sortedBy { it.line * 1000 + it.word })
+        }
+        
+        // Log summary of what we built
+        val availableSurahs = pageInfoMap.values.map { it.surahNumber }.distinct().sorted()
+        Log.d(TAG, "📊 PageInfoMap built: ${pageInfoMap.size} pages, surahs: $availableSurahs")
+        pageInfoMap.forEach { (pageNum, pageInfo) ->
+            Log.d(TAG, "   Page $pageNum -> Surah ${pageInfo.surahNumber} (${pageInfo.words.size} words)")
         }
     }
 
@@ -199,10 +207,53 @@ class QuranImageReaderFragment : Fragment() {
     }
 
     private fun findFirstPageForSurah(surahNumber: Int): Int {
-        return pageInfoMap.entries.firstOrNull { it.value.surahNumber == surahNumber }?.key ?: 1
+        // Use the standard Madani Mushaf page mapping from SurahRepository
+        val surah = SurahRepository.getSurahByNumber(surahNumber)
+        if (surah != null) {
+            Log.d(TAG, "✅ Found surah $surahNumber (${surah.englishName}) starts on page ${surah.startPage}")
+            return surah.startPage
+        } else {
+            Log.w(TAG, "⚠️ Surah $surahNumber not found in repository, defaulting to page 1")
+            return 1
+        }
     }
 
     private fun setupViewPager(initialPage: Int) {
+        // Handle surah navigation - check if we need to navigate to a specific surah
+        val surahNumber = arguments?.getInt("surahNumber")
+        val effectiveInitialPage = if (surahNumber != null && surahNumber > 0) {
+            val pageForSurah = findFirstPageForSurah(surahNumber)
+            Log.d(TAG, "🕌 Navigating to surah $surahNumber, standard page: $pageForSurah")
+            
+            // Check if we have content for this page in our limited database
+            if (pageInfoMap.containsKey(pageForSurah)) {
+                // We have actual content for this page
+                Log.d(TAG, "✅ Page $pageForSurah has content available")
+                currentSurahNumber = surahNumber
+                pageForSurah
+            } else {
+                // We don't have content for this page, show message and redirect to available content
+                Log.w(TAG, "⚠️ Page $pageForSurah for surah $surahNumber not available in database")
+                
+                val surah = SurahRepository.getSurahByNumber(surahNumber)
+                val surahName = surah?.englishName ?: "Surah $surahNumber"
+                
+                // Show a toast to inform user
+                view?.post {
+                    android.widget.Toast.makeText(
+                        requireContext(),
+                        "$surahName not available. Showing Al-Baqarah instead.",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+                
+                // Default to page 2 where we have actual content
+                2
+            }
+        } else {
+            initialPage
+        }
+        
         // Force use of V2 adapter for debugging
         QuranImagePageMigration.enableV2Adapter(requireContext())
         usingV2Adapter = true // Force V2 for debugging
@@ -210,7 +261,7 @@ class QuranImageReaderFragment : Fragment() {
         Log.d(TAG, "Setting up ViewPager with V2 adapter forced ON")
         Log.d(TAG, "Total pages: $totalPages")
         Log.d(TAG, "PageInfoMap size: ${pageInfoMap.size}")
-        Log.d(TAG, "Initial page: $initialPage")
+        Log.d(TAG, "Effective initial page: $effectiveInitialPage (requested: $initialPage, surah: $surahNumber)")
         
         if (usingV2Adapter) {
             // Use the new V2 adapter with enhanced features
@@ -243,12 +294,12 @@ class QuranImageReaderFragment : Fragment() {
         }
 
         binding.quranImagePager.layoutDirection = View.LAYOUT_DIRECTION_RTL
-        binding.quranImagePager.setCurrentItem(initialPage - 1, false) // Convert to 0-based
+        binding.quranImagePager.setCurrentItem(effectiveInitialPage - 1, false) // Convert to 0-based
 
         binding.quranImagePager.post {
-            binding.quranImagePager.setCurrentItem(initialPage - 1, false)
-            currentPagePosition = initialPage - 1
-            updateHeader(currentSurahNumber, initialPage)
+            binding.quranImagePager.setCurrentItem(effectiveInitialPage - 1, false)
+            currentPagePosition = effectiveInitialPage - 1
+            updateHeader(currentSurahNumber, effectiveInitialPage)
         }
     }
 

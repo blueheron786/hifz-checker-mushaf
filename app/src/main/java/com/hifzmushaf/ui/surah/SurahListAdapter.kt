@@ -57,12 +57,12 @@ class SurahListFragment : Fragment() {
                         putInt("surahNumber", surah.number)
                     }
                     findNavController().navigate(
-                        R.id.action_surahListFragment_to_quranReaderFragment,
+                        R.id.action_surahListFragment_to_quranImageReaderFragment,
                         bundle
                     )
                 } catch (e: IllegalStateException) {
                     requireActivity().supportFragmentManager.beginTransaction()
-                        .replace(R.id.nav_host_fragment, QuranReaderFragment().apply {
+                        .replace(R.id.nav_host_fragment, QuranImageReaderFragment().apply {
                             arguments = Bundle().apply {
                                 putInt("surahNumber", surah.number)
                             }

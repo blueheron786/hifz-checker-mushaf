@@ -119,14 +119,14 @@ class QuranImagePage @JvmOverloads constructor(
     
     init {
         // Configure ImageView for proper Quran page display
-        scaleType = ScaleType.FIT_START  // Better for text - keeps it at the top
+        scaleType = ScaleType.FIT_CENTER  // Better for fitting both width and height
         adjustViewBounds = true
         
         // Set minimum dimensions to prevent squishing
         minimumWidth = 400
         minimumHeight = 600
         
-        Log.d(TAG, "📱 QuranImagePage initialized with proper aspect ratio settings")
+        Log.d(TAG, "📱 QuranImagePage initialized with center-fit scaling for height optimization")
     }
 
     /**
@@ -266,15 +266,31 @@ class QuranImagePage @JvmOverloads constructor(
             val maxX = wordsForPage.maxOfOrNull { it.x + it.width } ?: 1000f
             val maxY = wordsForPage.maxOfOrNull { it.y + it.height } ?: 1500f
             
-            // Ensure proper aspect ratio for Quran pages (approximately 2:3)
-            val baseWidth = (maxX + 100).toInt()  // Add padding
-            val baseHeight = (maxY + 100).toInt()
+            // Count approximate lines by grouping words by similar Y positions
+            val lineYPositions = wordsForPage.map { it.y }.distinct().sorted()
+            val approximateLines = lineYPositions.size
             
-            // Adjust to maintain good proportions
-            val pageWidth = if (baseWidth < 800) 800 else baseWidth
-            val pageHeight = if (baseHeight < 1200) 1200 else baseHeight
+            Log.d(TAG, "📏 Page analysis - Max X: $maxX, Max Y: $maxY, Approximate lines: $approximateLines")
             
-            Log.d(TAG, "📐 Page dimensions: ${pageWidth}x${pageHeight} (base: ${baseWidth}x${baseHeight})")
+            // For pages with full content (more than 10 lines), optimize for height fitting
+            val pageWidth: Int
+            val pageHeight: Int
+            
+            if (approximateLines >= 10) {
+                // Full pages - scale to fit screen height better
+                // Use consistent dimensions for full pages to ensure proper scaling
+                pageWidth = 1080  // Standard phone width
+                pageHeight = 1800 // Taller to accommodate 15 lines properly
+                Log.d(TAG, "📐 Full page detected ($approximateLines lines) - using height-optimized dimensions: ${pageWidth}x${pageHeight}")
+            } else {
+                // Shorter pages (like pages 1-2) - use content-based dimensions
+                val baseWidth = (maxX + 100).toInt()  // Add padding
+                val baseHeight = (maxY + 200).toInt()  // Extra padding for shorter pages
+                
+                pageWidth = if (baseWidth < 800) 800 else baseWidth
+                pageHeight = if (baseHeight < 1000) 1000 else baseHeight
+                Log.d(TAG, "📐 Short page detected ($approximateLines lines) - using content-based dimensions: ${pageWidth}x${pageHeight}")
+            }
             
             // 3. Create a canvas to assemble the page
             val pageBitmap = Bitmap.createBitmap(pageWidth, pageHeight, Bitmap.Config.ARGB_8888)
@@ -291,6 +307,27 @@ class QuranImagePage @JvmOverloads constructor(
             // 5. Download and place each word at its correct position
             var successfulWords = 0
             var cachedWords = 0
+            
+            // Scale factor for height optimization on full pages
+            val heightScaleFactor = if (approximateLines >= 10) {
+                // For full pages, scale Y positions to better utilize the page height
+                val contentHeight = maxY - (wordsForPage.minOfOrNull { it.y } ?: 0f)
+                val availableHeight = pageHeight - 200f  // Leave some margin
+                if (contentHeight > 0) (availableHeight / contentHeight).coerceAtMost(1.5f) else 1f
+            } else {
+                1f  // No scaling for shorter pages
+            }
+            
+            val widthScaleFactor = if (approximateLines >= 10) {
+                // Slight width scaling to maintain proportions
+                val contentWidth = maxX - (wordsForPage.minOfOrNull { it.x } ?: 0f)
+                val availableWidth = pageWidth - 100f
+                if (contentWidth > 0) (availableWidth / contentWidth).coerceAtMost(1.2f) else 1f
+            } else {
+                1f
+            }
+            
+            Log.d(TAG, "🎯 Scale factors - Height: $heightScaleFactor, Width: $widthScaleFactor")
             
             for ((index, word) in wordsForPage.withIndex()) {
                 try {
@@ -321,11 +358,17 @@ class QuranImagePage @JvmOverloads constructor(
                     
                     // Place word on page if we have the image
                     if (wordBitmap != null) {
+                        // Apply scaling factors for height optimization
+                        val scaledX = word.x * widthScaleFactor
+                        val scaledY = word.y * heightScaleFactor
+                        val scaledWidth = word.width * widthScaleFactor
+                        val scaledHeight = word.height * heightScaleFactor
+                        
                         val destRect = android.graphics.RectF(
-                            word.x,
-                            word.y, 
-                            word.x + word.width,
-                            word.y + word.height
+                            scaledX,
+                            scaledY, 
+                            scaledX + scaledWidth,
+                            scaledY + scaledHeight
                         )
                         canvas.drawBitmap(wordBitmap, null, destRect, null)
                         successfulWords++
