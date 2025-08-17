@@ -43,11 +43,16 @@ class QuranImagePage @JvmOverloads constructor(
         // Image sources - Updated with working URLs
         private const val QPC_BASE_URL = "https://www.searchtruth.com/quran/images1"
         private const val QPC_ALT_URL = "https://quran.com/images/pages"
+        private const val QPC_FULL_PAGE_URL = "https://qpc.ksu.edu.sa/pages/qpc14linesv2"
         private const val BLACK_IMAGES_WORD_BY_WORD_BASE_URL = "https://api.qurancdn.com/api/qdc/words"
         
         // Cache directories
         private const val PAGE_IMAGES_CACHE_DIR = "quran_pages"
         private const val WORD_IMAGES_CACHE_DIR = "quran_words"
+        
+        // Display modes
+        private const val MODE_WORD_BY_WORD = "word_by_word"
+        private const val MODE_FULL_PAGE_MASK = "full_page_mask"
         
         // Reduced image dimensions to save memory
         private const val PAGE_IMAGE_WIDTH = 400  // Much smaller placeholders
@@ -101,7 +106,13 @@ class QuranImagePage @JvmOverloads constructor(
     private var pageNumber: Int = 1
     private var pageInfo: PageInfo? = null
     private var isMaskedMode: Boolean = false
+    private var displayMode: String = MODE_FULL_PAGE_MASK // Use fast full-page masking by default
+    private var revealedWords: MutableSet<String> = mutableSetOf() // Track revealed words
     private var onWordClickListener: ((WordBoundary) -> Unit)? = null
+    
+    // Full page image data
+    private var fullPageBitmap: Bitmap? = null
+    private var maskBitmap: Bitmap? = null
     
     // Gesture detection
     private val gestureDetector = GestureDetector(context, PageGestureListener())
