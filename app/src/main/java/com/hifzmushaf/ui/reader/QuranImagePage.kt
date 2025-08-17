@@ -118,8 +118,15 @@ class QuranImagePage @JvmOverloads constructor(
     private var downloadJob: kotlinx.coroutines.Job? = null
     
     init {
-        scaleType = ScaleType.FIT_CENTER
+        // Configure ImageView for proper Quran page display
+        scaleType = ScaleType.FIT_START  // Better for text - keeps it at the top
         adjustViewBounds = true
+        
+        // Set minimum dimensions to prevent squishing
+        minimumWidth = 400
+        minimumHeight = 600
+        
+        Log.d(TAG, "📱 QuranImagePage initialized with proper aspect ratio settings")
     }
 
     /**
@@ -156,7 +163,12 @@ class QuranImagePage @JvmOverloads constructor(
      * Public method to set page number and load the page
      */
     fun setPageNumber(pageNum: Int) {
+        Log.d(TAG, "🔢 Setting page number to: $pageNum (previous was: $pageNumber)")
         pageNumber = pageNum
+        
+        // DIAGNOSTIC: Show a unique placeholder immediately for each page
+        setImageBitmap(createLoadingPlaceholder("LOADING PAGE $pageNum"))
+        
         loadPageImage()
     }
 
@@ -229,6 +241,11 @@ class QuranImagePage @JvmOverloads constructor(
         Log.d(TAG, "🌐 Starting proper page assembly for page $pageNumber")
         
         try {
+            // Show initial loading state
+            withContext(Dispatchers.Main) {
+                setImageBitmap(createLoadingPlaceholder("Getting word positions..."))
+            }
+            
             // 1. Get words for this page from database
             val qpcDataManager = QpcDataManager(context)
             val wordsForPage = qpcDataManager.getWordsForPage(pageNumber)
@@ -240,13 +257,24 @@ class QuranImagePage @JvmOverloads constructor(
             
             Log.d(TAG, "📊 Found ${wordsForPage.size} words for page $pageNumber")
             
+            // Update loading status
+            withContext(Dispatchers.Main) {
+                setImageBitmap(createLoadingPlaceholder("Found ${wordsForPage.size} words, preparing canvas..."))
+            }
+            
             // 2. Calculate page dimensions based on word positions
             val maxX = wordsForPage.maxOfOrNull { it.x + it.width } ?: 1000f
             val maxY = wordsForPage.maxOfOrNull { it.y + it.height } ?: 1500f
-            val pageWidth = (maxX + 50).toInt()  // Add some padding
-            val pageHeight = (maxY + 50).toInt()
             
-            Log.d(TAG, "📐 Page dimensions: ${pageWidth}x${pageHeight}")
+            // Ensure proper aspect ratio for Quran pages (approximately 2:3)
+            val baseWidth = (maxX + 100).toInt()  // Add padding
+            val baseHeight = (maxY + 100).toInt()
+            
+            // Adjust to maintain good proportions
+            val pageWidth = if (baseWidth < 800) 800 else baseWidth
+            val pageHeight = if (baseHeight < 1200) 1200 else baseHeight
+            
+            Log.d(TAG, "📐 Page dimensions: ${pageWidth}x${pageHeight} (base: ${baseWidth}x${baseHeight})")
             
             // 3. Create a canvas to assemble the page
             val pageBitmap = Bitmap.createBitmap(pageWidth, pageHeight, Bitmap.Config.ARGB_8888)
@@ -255,12 +283,24 @@ class QuranImagePage @JvmOverloads constructor(
             // 4. Fill with background color (cream/white)
             canvas.drawColor(Color.parseColor("#FFF8DC"))
             
+            // Update loading status
+            withContext(Dispatchers.Main) {
+                setImageBitmap(createLoadingPlaceholder("Canvas ready, downloading words..."))
+            }
+            
             // 5. Download and place each word at its correct position
             var successfulWords = 0
             var cachedWords = 0
             
-            for (word in wordsForPage) {
+            for ((index, word) in wordsForPage.withIndex()) {
                 try {
+                    // Update progress every 10 words or so
+                    if (index % 10 == 0) {
+                        withContext(Dispatchers.Main) {
+                            setImageBitmap(createLoadingPlaceholder("Processing word ${index + 1}/${wordsForPage.size}..."))
+                        }
+                    }
+                    
                     val wordKey = "${word.surah}/${word.ayah}/${word.word}"
                     
                     // Check if word is already cached
@@ -440,11 +480,11 @@ class QuranImagePage @JvmOverloads constructor(
      * Creates a placeholder bitmap with page information
      */
     private fun createPlaceholderBitmap(): Bitmap {
-        // Create very small placeholder to save memory
+        // Create larger placeholder with proper aspect ratio for Quran pages
         val bitmap = Bitmap.createBitmap(
-            200,  // Much smaller
-            300,  // Much smaller
-            Bitmap.Config.RGB_565  // Use less memory
+            800,  // Wider for better readability
+            1200, // Taller to match typical Quran page proportions (2:3 ratio)
+            Bitmap.Config.RGB_565
         )
         val canvas = Canvas(bitmap)
         
@@ -455,43 +495,136 @@ class QuranImagePage @JvmOverloads constructor(
         val borderPaint = Paint().apply {
             color = Color.parseColor("#DDDDDD")
             style = Paint.Style.STROKE
-            strokeWidth = 4f
+            strokeWidth = 6f
         }
-        canvas.drawRect(10f, 10f, bitmap.width - 10f, bitmap.height - 10f, borderPaint)
+        canvas.drawRect(20f, 20f, bitmap.width - 20f, bitmap.height - 20f, borderPaint)
         
         // Text paint
         val textPaint = Paint().apply {
-            color = Color.parseColor("#666666")
-            textSize = 36f
+            color = Color.parseColor("#333333")
+            textSize = 48f
             textAlign = Paint.Align.CENTER
             isAntiAlias = true
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
         
         // Draw page number in Arabic
         canvas.drawText(
             "صفحة $pageNumber",
             bitmap.width / 2f,
-            bitmap.height / 2f - 75f,
+            bitmap.height / 2f - 150f,
             textPaint
         )
         
         // Draw page number in English
-        textPaint.textSize = 24f
+        textPaint.textSize = 36f
+        textPaint.typeface = android.graphics.Typeface.DEFAULT
         canvas.drawText(
             "Page $pageNumber",
             bitmap.width / 2f,
-            bitmap.height / 2f - 25f,
+            bitmap.height / 2f - 80f,
             textPaint
         )
         
-        // Draw status message
-        textPaint.textSize = 18f
-        textPaint.color = Color.parseColor("#999999")
+        // Draw loading message - more prominent
+        textPaint.textSize = 28f
+        textPaint.color = Color.parseColor("#0066CC")
         canvas.drawText(
-            "Loading...",
+            "📥 Downloading page...",
             bitmap.width / 2f,
-            bitmap.height / 2f + 50f,
+            bitmap.height / 2f + 20f,
             textPaint
+        )
+        
+        // Draw status line
+        textPaint.textSize = 20f
+        textPaint.color = Color.parseColor("#666666")
+        canvas.drawText(
+            "Please wait while words are assembled",
+            bitmap.width / 2f,
+            bitmap.height / 2f + 80f,
+            textPaint
+        )
+        
+        return bitmap
+    }
+    
+    /**
+     * Creates a loading placeholder with custom message
+     */
+    private fun createLoadingPlaceholder(message: String): Bitmap {
+        val bitmap = Bitmap.createBitmap(800, 1200, Bitmap.Config.RGB_565)
+        val canvas = Canvas(bitmap)
+        
+        // Background - light cream color
+        canvas.drawColor(Color.parseColor("#FFF8DC"))
+        
+        // Border
+        val borderPaint = Paint().apply {
+            color = Color.parseColor("#0066CC")
+            style = Paint.Style.STROKE
+            strokeWidth = 8f
+        }
+        canvas.drawRect(20f, 20f, bitmap.width - 20f, bitmap.height - 20f, borderPaint)
+        
+        // Title paint
+        val titlePaint = Paint().apply {
+            color = Color.parseColor("#333333")
+            textSize = 56f
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        
+        // Page number
+        canvas.drawText(
+            "صفحة $pageNumber",
+            bitmap.width / 2f,
+            bitmap.height / 2f - 200f,
+            titlePaint
+        )
+        
+        // Loading animation symbol
+        val symbolPaint = Paint().apply {
+            color = Color.parseColor("#0066CC")
+            textSize = 72f
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+        }
+        canvas.drawText(
+            "⏳",
+            bitmap.width / 2f,
+            bitmap.height / 2f - 100f,
+            symbolPaint
+        )
+        
+        // Progress message
+        val messagePaint = Paint().apply {
+            color = Color.parseColor("#0066CC")
+            textSize = 32f
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        canvas.drawText(
+            message,
+            bitmap.width / 2f,
+            bitmap.height / 2f + 20f,
+            messagePaint
+        )
+        
+        // Additional info
+        val infoPaint = Paint().apply {
+            color = Color.parseColor("#666666")
+            textSize = 24f
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+        }
+        canvas.drawText(
+            "Please wait...",
+            bitmap.width / 2f,
+            bitmap.height / 2f + 80f,
+            infoPaint
         )
         
         return bitmap

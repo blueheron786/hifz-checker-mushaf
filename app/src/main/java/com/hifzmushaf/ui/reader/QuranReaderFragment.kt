@@ -62,20 +62,21 @@ class QuranReaderFragment : Fragment() {
         private const val PAGE_READ_CHECK_INTERVAL = 1000L
     }
 
+    // Available page numbers in the database
+    private val availablePageNumbers = listOf(2, 3, 4, 5)
+    
     private val cachedPages by lazy {
         try {
-            // For now, return empty list since the old black_images_word_by_word.json 
-            // was expecting a different format than our new blackimageswordbyword.json
-            val emptyPages = emptyList<List<String>>()
+            // Create list of empty lists for each available page
+            val pages = availablePageNumbers.map { emptyList<String>() }
             
-            // Build surah mapping while loading
-            buildSurahMapping(emptyPages)
-            
-            emptyPages
+            Log.d(TAG, "🔄 Available pages from database: ${availablePageNumbers.joinToString(", ")}")
+            Log.d(TAG, "Created ${pages.size} pages for available database content")
+            pages
         } catch (e: Exception) {
             Log.e(TAG, "Error loading pages data", e)
-            // Return empty pages as fallback
-            emptyList<List<String>>()
+            // Return 4 empty pages as fallback
+            (1..4).map { emptyList<String>() }
         }
     }
 
@@ -293,7 +294,7 @@ class QuranReaderFragment : Fragment() {
         binding.quranPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 super.onPageSelected(position)
-                Log.d("PageChange", "Page selected: $position")
+                Log.d("PageChange", "Page selected: $position (1-based page: ${position + 1})")
                 
                 currentPagePosition = position
                 val newPage = position
@@ -553,7 +554,7 @@ class QuranReaderFragment : Fragment() {
             if (position !in 0 until allPages.size) return
 
             // NEW: Use QuranImagePage for word-by-word display
-            Log.d("QuranPageAdapter", "🔄 Setting up word-by-word page $position")
+            Log.d("QuranPageAdapter", "🔄 Setting up word-by-word page $position (1-based: ${position + 1})")
             
             // Clear existing content
             holder.binding.pageContent.removeAllViews()
@@ -566,8 +567,10 @@ class QuranReaderFragment : Fragment() {
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
             )
             
-            // Set the page number (1-based)
-            quranImagePage.setPageNumber(position + 1)
+            // Set the page number using the mapping from available pages
+            val pageNumber = fragment.availablePageNumbers[position]
+            Log.d("QuranPageAdapter", "📖 Loading page number: $pageNumber for position: $position")
+            quranImagePage.setPageNumber(pageNumber)
             
             holder.binding.pageContent.addView(quranImagePage)
 

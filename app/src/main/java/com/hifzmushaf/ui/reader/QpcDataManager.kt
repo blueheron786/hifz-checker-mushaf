@@ -249,11 +249,100 @@ class QpcDataManager(private val context: Context) {
     }
     
     /**
+     * Debug database structure and content
+     */
+    fun debugDatabaseStructure(): Unit {
+        try {
+            Log.d(TAG, "🔧 Starting database debugging...")
+            val dbFile = copyDatabaseToInternal()
+            if (!dbFile.exists()) {
+                Log.w(TAG, "❌ Database file not found at: ${dbFile.absolutePath}")
+                return
+            }
+            
+            Log.d(TAG, "✅ Database file found at: ${dbFile.absolutePath}, size: ${dbFile.length()} bytes")
+            
+            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+            
+            // Get all tables
+            val tablesCursor = db.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null)
+            Log.d(TAG, "📊 Tables in database:")
+            while (tablesCursor.moveToNext()) {
+                val tableName = tablesCursor.getString(0)
+                Log.d(TAG, "  - $tableName")
+                
+                // Get table schema
+                val schemaCursor = db.rawQuery("PRAGMA table_info($tableName)", null)
+                Log.d(TAG, "    Columns:")
+                while (schemaCursor.moveToNext()) {
+                    val columnName = schemaCursor.getString(1)
+                    val columnType = schemaCursor.getString(2)
+                    Log.d(TAG, "      $columnName ($columnType)")
+                }
+                schemaCursor.close()
+                
+                // Get row count
+                try {
+                    val countCursor = db.rawQuery("SELECT COUNT(*) FROM $tableName", null)
+                    if (countCursor.moveToFirst()) {
+                        val rowCount = countCursor.getInt(0)
+                        Log.d(TAG, "    Row count: $rowCount")
+                    }
+                    countCursor.close()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to count rows in $tableName: $e")
+                }
+                
+                // Show sample data
+                if (tableName != "sqlite_sequence") {
+                    try {
+                        val dataCursor = db.rawQuery("SELECT * FROM $tableName LIMIT 3", null)
+                        Log.d(TAG, "    Sample data:")
+                        var rowCount = 0
+                        while (dataCursor.moveToNext() && rowCount < 3) {
+                            val row = StringBuilder("      Row $rowCount: ")
+                            for (i in 0 until dataCursor.columnCount) {
+                                if (i > 0) row.append(", ")
+                                row.append("${dataCursor.getColumnName(i)}=")
+                                when (dataCursor.getType(i)) {
+                                    android.database.Cursor.FIELD_TYPE_INTEGER -> row.append(dataCursor.getInt(i))
+                                    android.database.Cursor.FIELD_TYPE_FLOAT -> row.append(dataCursor.getFloat(i))
+                                    android.database.Cursor.FIELD_TYPE_STRING -> row.append("'${dataCursor.getString(i)}'")
+                                    android.database.Cursor.FIELD_TYPE_NULL -> row.append("null")
+                                    else -> row.append(dataCursor.getString(i))
+                                }
+                            }
+                            Log.d(TAG, row.toString())
+                            rowCount++
+                        }
+                        dataCursor.close()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to sample data from $tableName: $e")
+                    }
+                }
+            }
+            tablesCursor.close()
+            
+            db.close()
+            Log.d(TAG, "🔧 Database debugging completed")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error debugging database structure", e)
+        }
+    }
+
+    /**
      * Get all words for a specific page from the database
      */
     fun getWordsForPage(pageNumber: Int): List<WordBoundary> {
         return try {
             Log.d(TAG, "🔍 Querying words for page $pageNumber")
+            
+            // Run database debugging on first call
+            if (pageNumber == 1) {
+                debugDatabaseStructure()
+            }
+            
             val dbFile = copyDatabaseToInternal()
             if (!dbFile.exists()) {
                 Log.w(TAG, "Database file not found")
@@ -263,9 +352,26 @@ class QpcDataManager(private val context: Context) {
             val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
             val words = mutableListOf<WordBoundary>()
             
-            // Try different possible table structures with page filtering using actual column names
+            // First, let's check what page numbers actually exist in the database
+            val pageCheckCursor = db.rawQuery("SELECT DISTINCT page_number FROM word_bounds ORDER BY page_number LIMIT 10", null)
+            val availablePages = mutableListOf<Int>()
+            while (pageCheckCursor.moveToNext()) {
+                availablePages.add(pageCheckCursor.getInt(0))
+            }
+            pageCheckCursor.close()
+            Log.d(TAG, "📊 Available pages in database: ${availablePages.joinToString(", ")}")
+            
+            // Also check total count
+            val countCursor = db.rawQuery("SELECT COUNT(*) FROM word_bounds", null)
+            if (countCursor.moveToFirst()) {
+                val totalWords = countCursor.getInt(0)
+                Log.d(TAG, "📊 Total words in database: $totalWords")
+            }
+            countCursor.close()
+            
+            // Try the correct query first based on the actual database schema
             val queries = listOf(
-                "SELECT page_number, line_number, word_position, sura_number, ayah_number, min_x, min_y, (max_x - min_x) as width, (max_y - min_y) as height FROM word_bounds WHERE page_number = ? ORDER BY line_number, word_position",
+                "SELECT page_number, line_number, word_position, sura_number, ayah_number, min_x, min_y, (max_x - min_x) as width, (max_y - min_y) as height, arabic_word FROM word_bounds WHERE page_number = ? ORDER BY line_number, word_position",
                 "SELECT page_number, line_number, line_position, sura_number, ayah_number, min_x, min_y, max_x, max_y FROM word_bounds WHERE page_number = ? ORDER BY line_number, line_position"
             )
             
