@@ -158,7 +158,7 @@ class QuranImagePageAdapterV2(
     /**
      * Gets cache statistics from all page views
      */
-    fun getCacheStats(): QuranImageCache.CacheStats? {
+    fun getCacheStats(): ImageCache.CacheStats? {
         return pageViewCache.values.firstOrNull()?.let { pageView ->
             // All page views share the same cache instance, so we can get stats from any one
             pageView.imageCache.getCacheStats()
