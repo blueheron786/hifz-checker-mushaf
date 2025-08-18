@@ -11,6 +11,7 @@ import com.hifzmushaf.ui.reader.QpcDataManager
 import com.hifzmushaf.ui.reader.PageInfo
 import com.hifzmushaf.ui.reader.WordBoundary
 import kotlinx.coroutines.*
+import kotlin.math.sqrt
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -114,9 +115,31 @@ class QuranImagePage @JvmOverloads constructor(
      * Enable or disable masked mode
      */
     fun setMaskedMode(masked: Boolean) {
+        Log.d(TAG, "🔒 setMaskedMode called: $masked (current: $isMaskedMode) for page $currentPageNumber")
+        
         if (isMaskedMode != masked) {
             isMaskedMode = masked
+            Log.d(TAG, "🔄 Masking mode changed from ${!masked} to $masked for page $currentPageNumber")
+            
+            // If enabling masked mode, create masked bitmap
+            if (masked && originalBitmap != null && !originalBitmap!!.isRecycled && wordBoundaries.isNotEmpty()) {
+                Log.d(TAG, "🎭 Creating masked bitmap for page $currentPageNumber with ${wordBoundaries.size} words")
+                
+                // Safely recycle old masked bitmap first
+                maskedBitmap?.let { oldMasked ->
+                    if (!oldMasked.isRecycled) {
+                        oldMasked.recycle()
+                    }
+                }
+                maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
+                Log.d(TAG, "✅ Masked bitmap created for page $currentPageNumber")
+            } else if (masked) {
+                Log.w(TAG, "⚠️ Cannot create masked bitmap: originalBitmap=${originalBitmap != null}, isRecycled=${originalBitmap?.isRecycled}, wordBoundaries=${wordBoundaries.size}")
+            }
+            
             updateDisplayedImage()
+        } else {
+            Log.d(TAG, "🔄 Masking mode unchanged ($masked) for page $currentPageNumber")
         }
     }
 
@@ -125,6 +148,90 @@ class QuranImagePage @JvmOverloads constructor(
      */
     fun setOnWordClickListener(listener: (WordBoundary) -> Unit) {
         onWordClickListener = listener
+    }
+
+    /**
+     * Temporarily reveal a single word for 5 seconds
+     */
+    fun revealWordTemporarily(word: WordBoundary) {
+        val wordKey = "${word.surah}_${word.ayah}_${word.word}"
+        revealedWords.add(wordKey)
+        
+        // Recreate masked bitmap if in masked mode
+        if (isMaskedMode && originalBitmap != null && !originalBitmap!!.isRecycled) {
+            maskedBitmap?.let { oldMasked ->
+                if (!oldMasked.isRecycled) {
+                    oldMasked.recycle()
+                }
+            }
+            maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
+        }
+        
+        updateDisplayedImage()
+        
+        // Hide the word again after 5 seconds
+        imageScope.launch {
+            delay(5000)
+            revealedWords.remove(wordKey)
+            withContext(Dispatchers.Main) {
+                // Only update if the view is still attached and bitmaps are not recycled
+                if (isAttachedToWindow && originalBitmap != null && !originalBitmap!!.isRecycled) {
+                    if (isMaskedMode) {
+                        maskedBitmap?.let { oldMasked ->
+                            if (!oldMasked.isRecycled) {
+                                oldMasked.recycle()
+                            }
+                        }
+                        maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
+                    }
+                    updateDisplayedImage()
+                }
+            }
+        }
+    }
+
+    /**
+     * Temporarily reveal an entire ayah for 5 seconds
+     */
+    fun revealAyahTemporarily(surahNumber: Int, ayahNumber: Int) {
+        // Find all words in this ayah
+        val ayahWords = wordBoundaries.filter { it.surah == surahNumber && it.ayah == ayahNumber }
+        val ayahWordKeys = ayahWords.map { "${it.surah}_${it.ayah}_${it.word}" }
+        
+        // Add all words of this ayah to revealed words
+        revealedWords.addAll(ayahWordKeys)
+        
+        // Recreate masked bitmap if in masked mode
+        if (isMaskedMode && originalBitmap != null && !originalBitmap!!.isRecycled) {
+            maskedBitmap?.let { oldMasked ->
+                if (!oldMasked.isRecycled) {
+                    oldMasked.recycle()
+                }
+            }
+            maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
+        }
+        
+        updateDisplayedImage()
+        
+        // Hide the ayah again after 5 seconds
+        imageScope.launch {
+            delay(5000)
+            revealedWords.removeAll(ayahWordKeys.toSet())
+            withContext(Dispatchers.Main) {
+                // Only update if the view is still attached and bitmaps are not recycled
+                if (isAttachedToWindow && originalBitmap != null && !originalBitmap!!.isRecycled) {
+                    if (isMaskedMode) {
+                        maskedBitmap?.let { oldMasked ->
+                            if (!oldMasked.isRecycled) {
+                                oldMasked.recycle()
+                            }
+                        }
+                        maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
+                    }
+                    updateDisplayedImage()
+                }
+            }
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -148,13 +255,27 @@ class QuranImagePage @JvmOverloads constructor(
      */
     fun cleanup() {
         imageScope.cancel()
-        originalBitmap?.recycle()
+        
+        // Clear the ImageView first to prevent drawing recycled bitmaps
+        setImageBitmap(null)
+        
+        // Safely recycle bitmaps
+        originalBitmap?.let { bitmap ->
+            if (!bitmap.isRecycled) {
+                bitmap.recycle()
+            }
+        }
         originalBitmap = null
-        maskedBitmap?.recycle()
+        
+        maskedBitmap?.let { bitmap ->
+            if (!bitmap.isRecycled) {
+                bitmap.recycle()
+            }
+        }
         maskedBitmap = null
+        
         wordBoundaries = emptyList()
         revealedWords.clear()
-        setImageBitmap(null)
     }
 
     /**
@@ -269,13 +390,43 @@ class QuranImagePage @JvmOverloads constructor(
      * Set the original bitmap and update display
      */
     private fun setOriginalBitmap(bitmap: Bitmap) {
-        originalBitmap?.recycle()
+        Log.d(TAG, "🖼️ setOriginalBitmap called for page $currentPageNumber, isMaskedMode: $isMaskedMode")
+        
+        // Safety check: ensure new bitmap is valid
+        if (bitmap.isRecycled) {
+            Log.e(TAG, "❌ Cannot set recycled bitmap as original")
+            return
+        }
+        
+        // Clear ImageView first to prevent drawing issues
+        setImageBitmap(null)
+        
+        // Safely recycle old bitmaps
+        originalBitmap?.let { oldBitmap ->
+            if (!oldBitmap.isRecycled) {
+                oldBitmap.recycle()
+            }
+        }
+        maskedBitmap?.let { oldMasked ->
+            if (!oldMasked.isRecycled) {
+                oldMasked.recycle()
+            }
+        }
+        maskedBitmap = null
+        
         originalBitmap = bitmap
         
         // Create masked version if needed
-        if (isMaskedMode && wordBoundaries.isNotEmpty()) {
-            maskedBitmap?.recycle()
-            maskedBitmap = createMaskedBitmap(bitmap, wordBoundaries)
+        if (isMaskedMode) {
+            if (wordBoundaries.isNotEmpty()) {
+                Log.d(TAG, "🎭 Creating masked bitmap in setOriginalBitmap for page $currentPageNumber")
+                maskedBitmap = createMaskedBitmap(bitmap, wordBoundaries)
+            } else {
+                Log.d(TAG, "🎭 Creating masked indicator for page $currentPageNumber (no word boundaries)")
+                maskedBitmap = createMaskedIndicator(bitmap)
+            }
+        } else {
+            Log.d(TAG, "🔍 Not creating masked bitmap: isMaskedMode=$isMaskedMode, wordBoundaries.size=${wordBoundaries.size}")
         }
         
         updateDisplayedImage()
@@ -284,48 +435,270 @@ class QuranImagePage @JvmOverloads constructor(
     }
 
     /**
-     * Create a masked version of the bitmap
+     * Create a masked version of the bitmap with placeholders and ayah numbers
      */
-    private fun createMaskedBitmap(originalBitmap: Bitmap, words: List<WordBoundary>): Bitmap {
-        val maskedBitmap = originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
+    private fun createMaskedBitmap(originalBitmap: Bitmap, words: List<WordBoundary>): Bitmap? {
+        // Safety check: ensure original bitmap is valid
+        if (originalBitmap.isRecycled) {
+            Log.e(TAG, "❌ Cannot create masked bitmap: original bitmap is recycled")
+            return null
+        }
+        
+        val maskedBitmap = try {
+            originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error creating bitmap copy: ${e.message}")
+            return null
+        }
+        
+        if (maskedBitmap == null) {
+            Log.e(TAG, "❌ Failed to create bitmap copy")
+            return null
+        }
+        
         val canvas = Canvas(maskedBitmap)
-        val paint = Paint().apply {
-            color = Color.BLACK
+        
+        // Paint for masking words (white background)
+        val maskPaint = Paint().apply {
+            color = Color.WHITE
             style = Paint.Style.FILL
         }
         
-        // Calculate scale factors
-        val scaleX = originalBitmap.width.toFloat() / 1000f  // Assuming coordinate system is 1000-based
-        val scaleY = originalBitmap.height.toFloat() / 1000f
+        // Paint for underline placeholders
+        val underlinePaint = Paint().apply {
+            color = Color.parseColor("#BDBDBD")
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+            pathEffect = DashPathEffect(floatArrayOf(8f, 4f), 0f) // Dashed line for better visibility
+        }
         
-        for (word in words) {
+        // Paint for ayah numbers
+        val ayahNumberPaint = Paint().apply {
+            color = Color.parseColor("#2E7D32")
+            textSize = 20f
+            typeface = Typeface.DEFAULT_BOLD
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+        }
+        
+        // Paint for ayah number background circle
+        val circlePaint = Paint().apply {
+            color = Color.parseColor("#E8F5E8")
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+        
+        // Paint for circle border
+        val circleBorderPaint = Paint().apply {
+            color = Color.parseColor("#4CAF50")
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+            isAntiAlias = true
+        }
+        
+        // Calculate scale factors based on actual coordinate ranges
+        // First, find the actual coordinate bounds from the data
+        if (words.isNotEmpty()) {
+            val maxX = words.maxOf { it.x + it.width }
+            val maxY = words.maxOf { it.y + it.height }
+            val minX = words.minOf { it.x }
+            val minY = words.minOf { it.y }
+            
+            Log.d(TAG, "Coordinate analysis for page $currentPageNumber:")
+            Log.d(TAG, "  Bitmap size: ${originalBitmap.width}x${originalBitmap.height}")
+            Log.d(TAG, "  X range: $minX to $maxX (span: ${maxX - minX})")
+            Log.d(TAG, "  Y range: $minY to $maxY (span: ${maxY - minY})")
+            
+            // Use actual coordinate system bounds instead of hardcoded 1000
+            val scaleX = originalBitmap.width.toFloat() / maxX
+            val scaleY = originalBitmap.height.toFloat() / maxY
+            
+            Log.d(TAG, "  Scale factors: scaleX=$scaleX, scaleY=$scaleY")
+        } else {
+            Log.w(TAG, "No word boundaries available for page $currentPageNumber")
+            return maskedBitmap
+        }
+        
+        val scaleX = if (words.isNotEmpty()) {
+            val maxX = words.maxOf { it.x + it.width }
+            originalBitmap.width.toFloat() / maxX
+        } else 1f
+        
+        val scaleY = if (words.isNotEmpty()) {
+            val maxY = words.maxOf { it.y + it.height }
+            originalBitmap.height.toFloat() / maxY
+        } else 1f
+        
+        // Group words by ayah to track which ayahs we've processed
+        val processedAyahs = mutableSetOf<String>()
+        
+        // Sort words by page position (line then word position) for proper ayah number placement
+        val sortedWords = words.sortedWith(compareBy<WordBoundary> { it.line }.thenBy { it.word })
+        
+        for (word in sortedWords) {
             val wordKey = "${word.surah}_${word.ayah}_${word.word}"
             if (!revealedWords.contains(wordKey)) {
+                // Calculate word rectangle with some padding
                 val rect = RectF(
-                    word.x * scaleX,
-                    word.y * scaleY,
-                    (word.x + word.width) * scaleX,
-                    (word.y + word.height) * scaleY
+                    word.x * scaleX - 1f,
+                    word.y * scaleY - 1f,
+                    (word.x + word.width) * scaleX + 1f,
+                    (word.y + word.height) * scaleY + 1f
                 )
-                canvas.drawRect(rect, paint)
+                
+                // Draw white background to mask the word
+                canvas.drawRect(rect, maskPaint)
+                
+                // Draw underline placeholder - make it slightly narrower than the word
+                val underlineY = rect.bottom - 3f
+                val underlineLeft = rect.left + (rect.width() * 0.1f)
+                val underlineRight = rect.right - (rect.width() * 0.1f)
+                canvas.drawLine(underlineLeft, underlineY, underlineRight, underlineY, underlinePaint)
+                
+                // Show ayah number for the first word of each ayah
+                val ayahKey = "${word.surah}_${word.ayah}"
+                if (word.word == 1 && !processedAyahs.contains(ayahKey)) {
+                    processedAyahs.add(ayahKey)
+                    
+                    // Convert ayah number to Arabic numerals
+                    val arabicAyahNumber = convertToArabicNumerals(word.ayah)
+                    
+                    // Position ayah number to the right of the first word
+                    val ayahX = rect.right + 25f
+                    val ayahY = rect.centerY()
+                    
+                    // Draw circle background for the ayah number
+                    val radius = 16f
+                    canvas.drawCircle(ayahX, ayahY, radius, circlePaint)
+                    canvas.drawCircle(ayahX, ayahY, radius, circleBorderPaint)
+                    
+                    // Draw the ayah number
+                    canvas.drawText(arabicAyahNumber, ayahX, ayahY + 6f, ayahNumberPaint)
+                }
             }
         }
         
         return maskedBitmap
+    }
+    
+    /**
+     * Create a masked indicator when masking is enabled but no word boundaries are available
+     */
+    private fun createMaskedIndicator(originalBitmap: Bitmap): Bitmap? {
+        // Safety check: ensure original bitmap is valid
+        if (originalBitmap.isRecycled) {
+            Log.e(TAG, "❌ Cannot create masked indicator: original bitmap is recycled")
+            return null
+        }
+        
+        val maskedBitmap = try {
+            originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error creating bitmap copy for indicator: ${e.message}")
+            return null
+        }
+        
+        if (maskedBitmap == null) {
+            Log.e(TAG, "❌ Failed to create bitmap copy for indicator")
+            return null
+        }
+        
+        val canvas = Canvas(maskedBitmap)
+        
+        // Add a subtle overlay to indicate masking is enabled
+        val overlayPaint = Paint().apply {
+            color = Color.parseColor("#10000000") // Very light black overlay (6% opacity)
+            style = Paint.Style.FILL
+        }
+        
+        // Draw subtle overlay
+        canvas.drawRect(0f, 0f, maskedBitmap.width.toFloat(), maskedBitmap.height.toFloat(), overlayPaint)
+        
+        // Add masking indicator text in top-right corner
+        val textPaint = Paint().apply {
+            color = Color.parseColor("#4CAF50")
+            textSize = 24f
+            typeface = Typeface.DEFAULT_BOLD
+            isAntiAlias = true
+        }
+        
+        val indicatorText = "🔒 Masked Mode"
+        val textBounds = android.graphics.Rect()
+        textPaint.getTextBounds(indicatorText, 0, indicatorText.length, textBounds)
+        
+        // Position in top-right corner with some margin
+        val x = maskedBitmap.width - textBounds.width() - 20f
+        val y = textBounds.height() + 20f
+        
+        // Draw semi-transparent background
+        val bgPaint = Paint().apply {
+            color = Color.parseColor("#80FFFFFF")
+            style = Paint.Style.FILL
+        }
+        
+        val bgRect = RectF(
+            x - 10f,
+            y - textBounds.height() - 5f,
+            x + textBounds.width() + 10f,
+            y + 5f
+        )
+        canvas.drawRoundRect(bgRect, 8f, 8f, bgPaint)
+        
+        // Draw the text
+        canvas.drawText(indicatorText, x, y, textPaint)
+        
+        Log.d(TAG, "✅ Created masked indicator for page $currentPageNumber")
+        return maskedBitmap
+    }
+    
+    /**
+     * Convert English numerals to Arabic-Indic numerals
+     */
+    private fun convertToArabicNumerals(number: Int): String {
+        val arabicNumerals = arrayOf("٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩")
+        return number.toString().map { digit ->
+            if (digit.isDigit()) {
+                arabicNumerals[digit.toString().toInt()]
+            } else {
+                digit.toString()
+            }
+        }.joinToString("")
     }
 
     /**
      * Update the displayed image based on current mode
      */
     private fun updateDisplayedImage() {
-        val bitmapToShow = if (isMaskedMode && maskedBitmap != null) {
-            maskedBitmap
-        } else {
-            originalBitmap
+        Log.d(TAG, "🖼️ updateDisplayedImage() called for page $currentPageNumber - isMaskedMode: $isMaskedMode")
+        
+        // Safety check: ensure we don't try to display recycled bitmaps
+        val bitmapToShow = when {
+            isMaskedMode && maskedBitmap != null && !maskedBitmap!!.isRecycled -> {
+                Log.d(TAG, "📋 Showing MASKED bitmap for page $currentPageNumber")
+                maskedBitmap
+            }
+            originalBitmap != null && !originalBitmap!!.isRecycled -> {
+                Log.d(TAG, "📄 Showing ORIGINAL bitmap for page $currentPageNumber")
+                originalBitmap
+            }
+            else -> {
+                Log.w(TAG, "⚠️ No valid bitmap available for page $currentPageNumber")
+                null
+            }
         }
         
         if (bitmapToShow != null) {
-            setImageBitmap(bitmapToShow)
+            try {
+                setImageBitmap(bitmapToShow)
+                Log.d(TAG, "✅ Bitmap set successfully for page $currentPageNumber")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error setting bitmap: ${e.message}")
+                // Clear the ImageView if bitmap setting fails
+                setImageBitmap(null)
+            }
+        } else {
+            Log.w(TAG, "⚠️ No valid bitmap to display")
+            setImageBitmap(null)
         }
     }
 
@@ -568,7 +941,7 @@ class QuranImagePage @JvmOverloads constructor(
     }
 
     /**
-     * Handle touch events to detect word clicks
+     * Handle touch events to detect word clicks and ayah number clicks
      */
     private fun handleTouch(x: Float, y: Float) {
         if (wordBoundaries.isEmpty() || drawable == null) return
@@ -586,7 +959,35 @@ class QuranImagePage @JvmOverloads constructor(
         val wordX = (bitmapX / bitmap.width) * 1000f
         val wordY = (bitmapY / bitmap.height) * 1000f
         
-        // Find clicked word
+        // First check for ayah number clicks (circles positioned to the right of first words)
+        val processedAyahs = mutableSetOf<String>()
+        val sortedWords = wordBoundaries.sortedWith(compareBy<WordBoundary> { it.line }.thenBy { it.word })
+        
+        for (word in sortedWords) {
+            val ayahKey = "${word.surah}_${word.ayah}"
+            if (word.word == 1 && !processedAyahs.contains(ayahKey)) {
+                processedAyahs.add(ayahKey)
+                
+                // Calculate ayah number circle position (same as in createMaskedBitmap)
+                val ayahCircleX = word.x + word.width + 25f
+                val ayahCircleY = word.y + (word.height / 2f)
+                val radius = 16f
+                
+                // Check if click is within ayah number circle
+                val distance = kotlin.math.sqrt(
+                    (wordX - ayahCircleX) * (wordX - ayahCircleX) + 
+                    (wordY - ayahCircleY) * (wordY - ayahCircleY)
+                )
+                
+                if (distance <= radius) {
+                    Log.d(TAG, "Ayah number clicked: ${word.surah}:${word.ayah}")
+                    revealAyahTemporarily(word.surah, word.ayah)
+                    return
+                }
+            }
+        }
+        
+        // If no ayah number was clicked, check for word clicks
         for (word in wordBoundaries) {
             if (wordX >= word.x && wordX <= word.x + word.width &&
                 wordY >= word.y && wordY <= word.y + word.height) {
@@ -594,9 +995,8 @@ class QuranImagePage @JvmOverloads constructor(
                 Log.d(TAG, "Word clicked: ${word.surah}:${word.ayah}:${word.word}")
                 onWordClickListener?.invoke(word)
                 
-                if (isMaskedMode) {
-                    revealWord(word)
-                }
+                // Always reveal word temporarily (no mode check needed)
+                revealWordTemporarily(word)
                 break
             }
         }
@@ -605,8 +1005,21 @@ class QuranImagePage @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         imageScope.cancel()
-        originalBitmap?.recycle()
-        maskedBitmap?.recycle()
+        
+        // Clear the ImageView first
+        setImageBitmap(null)
+        
+        // Safely recycle bitmaps
+        originalBitmap?.let { bitmap ->
+            if (!bitmap.isRecycled) {
+                bitmap.recycle()
+            }
+        }
+        maskedBitmap?.let { bitmap ->
+            if (!bitmap.isRecycled) {
+                bitmap.recycle()
+            }
+        }
         imageCache.clear()
     }
 }

@@ -8,7 +8,7 @@ import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.hifzmushaf.data.QuranDatabase
 import com.hifzmushaf.data.repository.LastReadRepository
 import com.hifzmushaf.ui.hideWithAnimation
-import com.hifzmushaf.ui.reader.QuranReaderFragment
+import com.hifzmushaf.ui.reader.QuranImageReaderFragment
 import com.hifzmushaf.ui.showWithAnimation
 import com.hifzmushaf.ui.surah.SurahListFragment
 import kotlinx.coroutines.launch
@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 supportFragmentManager.beginTransaction()
-                    .replace(R.id.nav_host_fragment, QuranReaderFragment().apply {
+                    .replace(R.id.nav_host_fragment, QuranImageReaderFragment().apply {
                         arguments = args
                     })
                     .addToBackStack("reader")
@@ -75,7 +75,7 @@ class MainActivity : AppCompatActivity() {
                     putInt("pageNumber", lastPage ?: 0)
                 }
                 supportFragmentManager.beginTransaction()
-                    .replace(R.id.nav_host_fragment, QuranReaderFragment().apply {
+                    .replace(R.id.nav_host_fragment, QuranImageReaderFragment().apply {
                         arguments = args
                     })
                     .addToBackStack("reader")

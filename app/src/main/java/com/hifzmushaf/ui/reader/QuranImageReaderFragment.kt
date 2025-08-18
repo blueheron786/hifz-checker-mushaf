@@ -78,7 +78,7 @@ class QuranImageReaderFragment : Fragment() {
     private lateinit var pageAdapter: QuranImagePageAdapter
     private lateinit var pageAdapterV2: QuranImagePageAdapterV2
     private var usingV2Adapter = false
-    private var maskedModeEnabled = false // Start in normal mode to show images immediately
+    private var maskedModeEnabled = true // Re-enabled masking with placeholders
 
     companion object {
         private const val PAGE_READ_DELAY_MS = 3000L
@@ -158,17 +158,38 @@ class QuranImageReaderFragment : Fragment() {
     }
 
     private fun buildPageInfoMap() {
-        pageInfoMap = wordBoundaries.groupBy { it.page }.mapValues { (pageNum, words) ->
+        // First, build map for pages with word boundaries
+        val pagesWithBoundaries = wordBoundaries.groupBy { it.page }.mapValues { (pageNum, words) ->
             val surahNumber = words.firstOrNull()?.surah ?: 1
             Log.d(TAG, "📄 Page $pageNum: ${words.size} words, surah: $surahNumber")
             PageInfo(pageNum, surahNumber, words.sortedBy { it.line * 1000 + it.word })
         }
         
+        // Then, create complete map with fallback for pages without boundaries
+        val completePageMap = (1..totalPages).map { pageNum ->
+            if (pagesWithBoundaries.containsKey(pageNum)) {
+                pageNum to pagesWithBoundaries[pageNum]!!
+            } else {
+                val surahNumber = findSurahForPage(pageNum)
+                pageNum to PageInfo(pageNum, surahNumber, emptyList())
+            }
+        }.toMap()
+        
+        pageInfoMap = completePageMap
+        
         // Log summary of what we built
+        val pagesWithData = pagesWithBoundaries.keys.sorted()
         val availableSurahs = pageInfoMap.values.map { it.surahNumber }.distinct().sorted()
-        Log.d(TAG, "📊 PageInfoMap built: ${pageInfoMap.size} pages, surahs: $availableSurahs")
-        pageInfoMap.forEach { (pageNum, pageInfo) ->
-            Log.d(TAG, "   Page $pageNum -> Surah ${pageInfo.surahNumber} (${pageInfo.words.size} words)")
+        Log.d(TAG, "📊 PageInfoMap built: ${pageInfoMap.size} total pages, ${pagesWithBoundaries.size} with word data")
+        Log.d(TAG, "📊 Pages with word boundaries: $pagesWithData")
+        Log.d(TAG, "📊 Available surahs: $availableSurahs")
+        
+        // Log details for first few pages to verify
+        (1..10).forEach { pageNum ->
+            val pageInfo = pageInfoMap[pageNum]
+            if (pageInfo != null) {
+                Log.d(TAG, "   Page $pageNum -> Surah ${pageInfo.surahNumber} (${pageInfo.words.size} words)")
+            }
         }
     }
 
@@ -277,6 +298,10 @@ class QuranImageReaderFragment : Fragment() {
             
             Log.d(TAG, "📎 Adapter attached to ViewPager2")
             
+            // Initialize masking mode immediately after adapter creation
+            pageAdapterV2.updateMaskedMode(maskedModeEnabled)
+            Log.d(TAG, "🔒 Initialized adapter with masking mode: $maskedModeEnabled")
+            
             // Perform migration if needed
             QuranImagePageMigration.migrateExistingCache(requireContext())
             
@@ -326,12 +351,7 @@ class QuranImageReaderFragment : Fragment() {
     }
 
     private fun setupModeToggle() {
-        // Add click listener to header to toggle between masked and normal mode
-        binding.pageInfoTextView.setOnClickListener {
-            toggleMaskedMode()
-        }
-        
-        // Update header to show current mode
+        // No mode toggle needed - always in placeholder mode
         updateModeIndicator()
     }
     
@@ -381,12 +401,7 @@ class QuranImageReaderFragment : Fragment() {
     
     fun onWordClicked(word: WordBoundary) {
         Log.d(TAG, "Word clicked: ${word.text} - Surah ${word.surah}, Ayah ${word.ayah}, Word ${word.word}")
-        
-        // You can add additional logic here such as:
-        // - Playing audio for the word
-        // - Showing word translation/meaning
-        // - Highlighting related words
-        // - Tracking learning progress
+        // Word reveal is now handled automatically in QuranImagePage
     }
 
     private fun convertToArabicNumerals(number: Int): String {

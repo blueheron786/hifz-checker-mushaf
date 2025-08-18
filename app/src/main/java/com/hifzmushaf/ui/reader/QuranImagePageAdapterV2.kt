@@ -57,11 +57,22 @@ class QuranImagePageAdapterV2(
                 // Add to container
                 binding.pageContainer.addView(pageView)
                 
-                // Set page data
+                // Set page data first
                 val pageInfo = pageInfoMap[pageNumber]
                 Log.d(TAG, "📄 Setting page data for page $pageNumber, calling setPage()")
+                Log.d(TAG, "📊 PageInfo for page $pageNumber: ${pageInfo?.words?.size ?: 0} words")
                 pageView.setPage(pageNumber, pageInfo)
-                pageView.setMaskedMode(fragment.isMaskedMode())
+                
+                // Set masked mode immediately (this may not work if bitmap isn't loaded yet)
+                val isMasked = fragment.isMaskedMode()
+                Log.d(TAG, "🔒 Setting masked mode to $isMasked for page $pageNumber (immediate)")
+                pageView.setMaskedMode(isMasked)
+                
+                // Also set masked mode with a delay to ensure it takes effect after async loading
+                pageView.postDelayed({
+                    Log.d(TAG, "🔒 Re-setting masked mode to $isMasked for page $pageNumber (delayed)")
+                    pageView.setMaskedMode(isMasked)
+                }, 1000) // Increased delay to 1000ms to ensure asset loading completes
                 
                 // Set word click listener
                 pageView.setOnWordClickListener { word ->
@@ -132,10 +143,16 @@ class QuranImagePageAdapterV2(
      * Updates masked mode for all currently bound views
      */
     fun updateMaskedMode(masked: Boolean) {
+        Log.d(TAG, "🔄 updateMaskedMode called with: $masked")
+        Log.d(TAG, "📋 Updating ${pageViewCache.size} cached page views")
+        
         // Update all cached page views
-        pageViewCache.values.forEach { pageView ->
+        pageViewCache.forEach { (pageNumber, pageView) ->
+            Log.d(TAG, "🔒 Setting masked mode $masked for cached page $pageNumber")
             pageView.setMaskedMode(masked)
         }
+        
+        Log.d(TAG, "✅ Finished updating masked mode for all cached pages")
     }
     
     /**
