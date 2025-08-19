@@ -85,6 +85,7 @@ class QuranImagePage @JvmOverloads constructor(
     private var wordBoundaries: List<WordBoundary> = emptyList()
     private var revealedWords: MutableSet<String> = mutableSetOf()
     private var onWordClickListener: ((WordBoundary) -> Unit)? = null
+    private var debugTouchPoints: MutableList<Pair<Float, Float>> = mutableListOf() // Store touch points for debugging
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             handleTouch(e.x, e.y)
@@ -576,6 +577,31 @@ class QuranImagePage @JvmOverloads constructor(
             }
         }
         
+        // Draw debug touch points as red circles
+        if (debugTouchPoints.isNotEmpty()) {
+            val touchPaint = Paint().apply {
+                color = Color.RED
+                style = Paint.Style.FILL
+                alpha = 200 // Semi-transparent
+            }
+            
+            val touchBorderPaint = Paint().apply {
+                color = Color.WHITE
+                style = Paint.Style.STROKE
+                strokeWidth = 2f
+            }
+            
+            for (touchPoint in debugTouchPoints) {
+                val circleRadius = 15f
+                // Draw white border
+                canvas.drawCircle(touchPoint.first, touchPoint.second, circleRadius + 1f, touchBorderPaint)
+                // Draw red circle
+                canvas.drawCircle(touchPoint.first, touchPoint.second, circleRadius, touchPaint)
+            }
+            
+            Log.d(TAG, "🔴 Drew ${debugTouchPoints.size} debug touch circles")
+        }
+        
         return maskedBitmap
     }
     
@@ -663,7 +689,12 @@ class QuranImagePage @JvmOverloads constructor(
             }
             originalBitmap != null && !originalBitmap!!.isRecycled -> {
                 Log.d(TAG, "📄 Showing ORIGINAL bitmap for page $currentPageNumber")
-                originalBitmap
+                // Create a copy with debug touch circles if we have touch points
+                if (debugTouchPoints.isNotEmpty()) {
+                    addDebugTouchCircles(originalBitmap!!)
+                } else {
+                    originalBitmap
+                }
             }
             else -> {
                 Log.w(TAG, "⚠️ No valid bitmap available for page $currentPageNumber")
@@ -684,6 +715,45 @@ class QuranImagePage @JvmOverloads constructor(
             Log.w(TAG, "⚠️ No valid bitmap to display")
             setImageBitmap(null)
         }
+    }
+    
+    /**
+     * Add debug touch circles to a bitmap (for non-masked mode)
+     */
+    private fun addDebugTouchCircles(originalBitmap: Bitmap): Bitmap {
+        if (debugTouchPoints.isEmpty()) return originalBitmap
+        
+        val bitmapWithCircles = try {
+            originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error creating bitmap copy for touch circles: ${e.message}")
+            return originalBitmap
+        }
+        
+        val canvas = Canvas(bitmapWithCircles)
+        
+        val touchPaint = Paint().apply {
+            color = Color.RED
+            style = Paint.Style.FILL
+            alpha = 200 // Semi-transparent
+        }
+        
+        val touchBorderPaint = Paint().apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+        }
+        
+        for (touchPoint in debugTouchPoints) {
+            val circleRadius = 15f
+            // Draw white border
+            canvas.drawCircle(touchPoint.first, touchPoint.second, circleRadius + 1f, touchBorderPaint)
+            // Draw red circle
+            canvas.drawCircle(touchPoint.first, touchPoint.second, circleRadius, touchPaint)
+        }
+        
+        Log.d(TAG, "🔴 Added ${debugTouchPoints.size} debug touch circles to original bitmap")
+        return bitmapWithCircles
     }
 
     /**
@@ -930,70 +1000,96 @@ class QuranImagePage @JvmOverloads constructor(
     private fun handleTouch(x: Float, y: Float) {
         if (wordBoundaries.isEmpty() || drawable == null) return
         
-        // Calculate scale factors based on current view size vs original bitmap size
         val bitmap = originalBitmap ?: return
-        val viewScaleX = bitmap.width.toFloat() / width.toFloat()
-        val viewScaleY = bitmap.height.toFloat() / height.toFloat()
         
-        // Adjust coordinates to bitmap space
-        val bitmapX = x * viewScaleX
-        val bitmapY = y * viewScaleY
+        // Get the drawable bounds and matrix to properly transform coordinates
+        val drawable = this.drawable ?: return
+        val matrix = imageMatrix
+        val viewBounds = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        val drawableBounds = RectF(0f, 0f, drawable.intrinsicWidth.toFloat(), drawable.intrinsicHeight.toFloat())
         
-        // Use the SAME coordinate transformation as createMaskedBitmap
-        // QPC coordinates use the actual image width from the database
-        val qpcWidth = 1300f  // From database img_width field
-        val qpcHeight = 2103f  // From actual bitmap height - QPC should match bitmap dimensions
-        
-        // Same scale factors as masking
-        val scaleX = bitmap.width.toFloat() / qpcWidth
-        val scaleY = bitmap.height.toFloat() / qpcHeight
-        val offsetX = 0f
-        val offsetY = 0f
-        
-        Log.d(TAG, "Touch: view($x,$y) -> bitmap($bitmapX,$bitmapY)")
-        Log.d(TAG, "Scale factors: scaleX=$scaleX, scaleY=$scaleY")
-        
-        // Check for word clicks by applying the SAME transformation as masking
-        var foundWord: WordBoundary? = null
-        for (word in wordBoundaries) {
-            // Transform word coordinates to bitmap space (same as masking)
-            val wordLeft = word.x * scaleX + offsetX
-            val wordTop = word.y * scaleY + offsetY
-            val wordRight = (word.x + word.width) * scaleX + offsetX
-            val wordBottom = (word.y + word.height) * scaleY + offsetY
+        // Apply the image matrix transformation to map view coordinates to bitmap coordinates
+        val inverseMatrix = Matrix()
+        if (matrix.invert(inverseMatrix)) {
+            val touchPoint = floatArrayOf(x, y)
+            inverseMatrix.mapPoints(touchPoint)
             
-            if (bitmapX >= wordLeft && bitmapX <= wordRight &&
-                bitmapY >= wordTop && bitmapY <= wordBottom) {
-                
-                Log.d(TAG, "✅ Word clicked: ${word.surah}:${word.ayah}:${word.word}")
-                Log.d(TAG, "   QPC coords: (${word.x},${word.y},${word.width},${word.height})")
-                Log.d(TAG, "   Bitmap rect: ($wordLeft,$wordTop,$wordRight,$wordBottom)")
-                foundWord = word
-                onWordClickListener?.invoke(word)
-                
-                // Always reveal word temporarily (no mode check needed)
-                revealWordTemporarily(word)
-                break
+            val bitmapX = touchPoint[0]
+            val bitmapY = touchPoint[1]
+            
+            // Store touch point for debugging (in bitmap coordinates)
+            debugTouchPoints.add(Pair(bitmapX, bitmapY))
+            if (debugTouchPoints.size > 5) {
+                debugTouchPoints.removeAt(0)
             }
-        }
-        
-        if (foundWord == null) {
-            Log.d(TAG, "❌ No word found at bitmap($bitmapX,$bitmapY)")
-            // Log nearby words for debugging
-            val nearbyWords = wordBoundaries.filter { word ->
-                val wordCenterX = (word.x + word.width/2) * scaleX + offsetX
-                val wordCenterY = (word.y + word.height/2) * scaleY + offsetY
-                kotlin.math.abs(bitmapX - wordCenterX) < 100 &&
-                kotlin.math.abs(bitmapY - wordCenterY) < 50
-            }.take(3)
             
-            nearbyWords.forEach { word ->
+            // Use the SAME coordinate transformation as createMaskedBitmap
+            val qpcWidth = 1300f  // From database img_width field
+            val qpcHeight = 2103f  // From actual bitmap height - QPC should match bitmap dimensions
+            
+            // Same scale factors as masking
+            val scaleX = bitmap.width.toFloat() / qpcWidth
+            val scaleY = bitmap.height.toFloat() / qpcHeight
+            val offsetX = 0f
+            val offsetY = 0f
+            
+            Log.d(TAG, "Touch: view($x,$y) -> bitmap($bitmapX,$bitmapY)")
+            Log.d(TAG, "Matrix transformation applied, scale factors: scaleX=$scaleX, scaleY=$scaleY")
+            Log.d(TAG, "Checking ${wordBoundaries.size} word boundaries...")
+            
+            // Check for word clicks by applying the SAME transformation as masking
+            var foundWord: WordBoundary? = null
+            for (word in wordBoundaries) {
+                // Transform word coordinates to bitmap space (same as masking)
                 val wordLeft = word.x * scaleX + offsetX
                 val wordTop = word.y * scaleY + offsetY
                 val wordRight = (word.x + word.width) * scaleX + offsetX
                 val wordBottom = (word.y + word.height) * scaleY + offsetY
-                Log.d(TAG, "  🔍 Nearby: ${word.surah}:${word.ayah}:${word.word} bitmap rect($wordLeft,$wordTop,$wordRight,$wordBottom)")
+                
+                if (bitmapX >= wordLeft && bitmapX <= wordRight &&
+                    bitmapY >= wordTop && bitmapY <= wordBottom) {
+                    
+                    Log.d(TAG, "✅ Word clicked: ${word.surah}:${word.ayah}:${word.word}")
+                    Log.d(TAG, "   QPC coords: (${word.x},${word.y},${word.width},${word.height})")
+                    Log.d(TAG, "   Bitmap rect: ($wordLeft,$wordTop,$wordRight,$wordBottom)")
+                    foundWord = word
+                    onWordClickListener?.invoke(word)
+                    
+                    // Always reveal word temporarily (no mode check needed)
+                    revealWordTemporarily(word)
+                    break
+                }
             }
+            
+            if (foundWord == null) {
+                Log.d(TAG, "❌ No word found at bitmap($bitmapX,$bitmapY)")
+                // Log nearby words for debugging with increased radius
+                val nearbyWords = wordBoundaries.mapNotNull { word ->
+                    val wordCenterX = (word.x + word.width/2) * scaleX + offsetX
+                    val wordCenterY = (word.y + word.height/2) * scaleY + offsetY
+                    val distance = kotlin.math.sqrt(
+                        (bitmapX - wordCenterX) * (bitmapX - wordCenterX) + 
+                        (bitmapY - wordCenterY) * (bitmapY - wordCenterY)
+                    )
+                    if (distance < 150) { // Increased search radius
+                        Pair(word, distance)
+                    } else null
+                }.sortedBy { it.second }.take(5) // Show top 5 closest words
+                
+                Log.d(TAG, "Found ${nearbyWords.size} nearby words:")
+                nearbyWords.forEach { (word, distance) ->
+                    val wordLeft = word.x * scaleX + offsetX
+                    val wordTop = word.y * scaleY + offsetY
+                    val wordRight = (word.x + word.width) * scaleX + offsetX
+                    val wordBottom = (word.y + word.height) * scaleY + offsetY
+                    Log.d(TAG, "  🔍 ${word.surah}:${word.ayah}:${word.word} dist=${distance.toInt()} rect($wordLeft,$wordTop,$wordRight,$wordBottom)")
+                }
+            }
+            
+            // Update display to show the new touch circle
+            updateDisplayedImage()
+        } else {
+            Log.e(TAG, "❌ Failed to invert image matrix for coordinate transformation")
         }
     }
 
