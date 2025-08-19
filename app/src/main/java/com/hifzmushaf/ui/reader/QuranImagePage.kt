@@ -151,10 +151,12 @@ class QuranImagePage @JvmOverloads constructor(
     }
 
     /**
-     * Temporarily reveal a single word for 5 seconds
+     * Temporarily reveal a single word for 5 seconds with fade animation
      */
     fun revealWordTemporarily(word: WordBoundary) {
         val wordKey = "${word.surah}_${word.ayah}_${word.word}"
+        
+        // Immediately reveal the word (fade out mask)
         revealedWords.add(wordKey)
         
         // Recreate masked bitmap if in masked mode
@@ -167,7 +169,19 @@ class QuranImagePage @JvmOverloads constructor(
             maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
         }
         
-        updateDisplayedImage()
+        // Quick fade out animation (100ms)
+        animate()
+            .alpha(0.8f)
+            .setDuration(100)
+            .withEndAction {
+                updateDisplayedImage()
+                // Quick fade back in
+                animate()
+                    .alpha(1.0f)
+                    .setDuration(100)
+                    .start()
+            }
+            .start()
         
         // Hide the word again after 5 seconds
         imageScope.launch {
@@ -184,7 +198,20 @@ class QuranImagePage @JvmOverloads constructor(
                         }
                         maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
                     }
-                    updateDisplayedImage()
+                    
+                    // Fade animation when mask reappears
+                    animate()
+                        .alpha(0.8f)
+                        .setDuration(100)
+                        .withEndAction {
+                            updateDisplayedImage()
+                            // Fade back to full visibility
+                            animate()
+                                .alpha(1.0f)
+                                .setDuration(100)
+                                .start()
+                        }
+                        .start()
                 }
             }
         }
@@ -435,7 +462,7 @@ class QuranImagePage @JvmOverloads constructor(
     }
 
     /**
-     * Create a masked version of the bitmap with placeholders and ayah numbers
+     * Create a masked version of the bitmap with word placeholders
      */
     private fun createMaskedBitmap(originalBitmap: Bitmap, words: List<WordBoundary>): Bitmap? {
         // Safety check: ensure original bitmap is valid
@@ -470,38 +497,6 @@ class QuranImagePage @JvmOverloads constructor(
             style = Paint.Style.STROKE
             strokeWidth = 4f
             pathEffect = DashPathEffect(floatArrayOf(8f, 4f), 0f) // Dashed line for better visibility
-        }
-        
-        // Paint for ayah numbers
-        val ayahNumberPaint = Paint().apply {
-            color = Color.parseColor("#2E7D32")
-            textSize = 20f
-            typeface = Typeface.DEFAULT_BOLD
-            textAlign = Paint.Align.CENTER
-            isAntiAlias = true
-        }
-        
-        // Paint for ayah number background circle
-        val circlePaint = Paint().apply {
-            color = Color.parseColor("#E8F5E8")
-            style = Paint.Style.FILL
-            isAntiAlias = true
-        }
-        
-        // Paint for circle border
-        val circleBorderPaint = Paint().apply {
-            color = Color.parseColor("#4CAF50")
-            style = Paint.Style.STROKE
-            strokeWidth = 2f
-            isAntiAlias = true
-        }
-        
-        // Paint for mask border to show boundaries
-        val maskBorderPaint = Paint().apply {
-            color = Color.parseColor("#FF5722") // Orange-red border
-            style = Paint.Style.STROKE
-            strokeWidth = 2f
-            isAntiAlias = true
         }
         
         // Calculate scale factors based on actual coordinate ranges
@@ -539,10 +534,7 @@ class QuranImagePage @JvmOverloads constructor(
         val offsetX = 0f
         val offsetY = 0f
         
-        // Group words by ayah to track which ayahs we've processed
-        val processedAyahs = mutableSetOf<String>()
-        
-        // Sort words by page position (line then word position) for proper ayah number placement
+        // Sort words by page position (line then word position)
         val sortedWords = words.sortedWith(compareBy<WordBoundary> { it.line }.thenBy { it.word })
         
         for (word in sortedWords) {
@@ -576,35 +568,11 @@ class QuranImagePage @JvmOverloads constructor(
                 // Draw white background to mask the word
                 canvas.drawRect(rect, maskPaint)
                 
-                // Draw colored border to show mask boundaries
-                canvas.drawRect(rect, maskBorderPaint)
-                
                 // Draw underline placeholder - make it slightly narrower than the word
                 val underlineY = rect.bottom - 3f
                 val underlineLeft = rect.left + (rect.width() * 0.1f)
                 val underlineRight = rect.right - (rect.width() * 0.1f)
                 canvas.drawLine(underlineLeft, underlineY, underlineRight, underlineY, underlinePaint)
-                
-                // Show ayah number for the first word of each ayah
-                val ayahKey = "${word.surah}_${word.ayah}"
-                if (word.word == 1 && !processedAyahs.contains(ayahKey)) {
-                    processedAyahs.add(ayahKey)
-                    
-                    // Convert ayah number to Arabic numerals
-                    val arabicAyahNumber = convertToArabicNumerals(word.ayah)
-                    
-                    // Position ayah number to the right of the first word
-                    val ayahX = rect.right + 25f
-                    val ayahY = rect.centerY()
-                    
-                    // Draw circle background for the ayah number
-                    val radius = 16f
-                    canvas.drawCircle(ayahX, ayahY, radius, circlePaint)
-                    canvas.drawCircle(ayahX, ayahY, radius, circleBorderPaint)
-                    
-                    // Draw the ayah number
-                    canvas.drawText(arabicAyahNumber, ayahX, ayahY + 6f, ayahNumberPaint)
-                }
             }
         }
         
@@ -681,20 +649,6 @@ class QuranImagePage @JvmOverloads constructor(
         return maskedBitmap
     }
     
-    /**
-     * Convert English numerals to Arabic-Indic numerals
-     */
-    private fun convertToArabicNumerals(number: Int): String {
-        val arabicNumerals = arrayOf("٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩")
-        return number.toString().map { digit ->
-            if (digit.isDigit()) {
-                arabicNumerals[digit.toString().toInt()]
-            } else {
-                digit.toString()
-            }
-        }.joinToString("")
-    }
-
     /**
      * Update the displayed image based on current mode
      */
@@ -971,63 +925,74 @@ class QuranImagePage @JvmOverloads constructor(
     }
 
     /**
-     * Handle touch events to detect word clicks and ayah number clicks
+     * Handle touch events to detect word clicks
      */
     private fun handleTouch(x: Float, y: Float) {
         if (wordBoundaries.isEmpty() || drawable == null) return
         
         // Calculate scale factors based on current view size vs original bitmap size
         val bitmap = originalBitmap ?: return
-        val scaleX = bitmap.width.toFloat() / width.toFloat()
-        val scaleY = bitmap.height.toFloat() / height.toFloat()
+        val viewScaleX = bitmap.width.toFloat() / width.toFloat()
+        val viewScaleY = bitmap.height.toFloat() / height.toFloat()
         
         // Adjust coordinates to bitmap space
-        val bitmapX = x * scaleX
-        val bitmapY = y * scaleY
+        val bitmapX = x * viewScaleX
+        val bitmapY = y * viewScaleY
         
-        // Convert to word coordinate space (assuming 1000-based coordinates)
-        val wordX = (bitmapX / bitmap.width) * 1000f
-        val wordY = (bitmapY / bitmap.height) * 1000f
+        // Use the SAME coordinate transformation as createMaskedBitmap
+        // QPC coordinates use the actual image width from the database
+        val qpcWidth = 1300f  // From database img_width field
+        val qpcHeight = 2103f  // From actual bitmap height - QPC should match bitmap dimensions
         
-        // First check for ayah number clicks (circles positioned to the right of first words)
-        val processedAyahs = mutableSetOf<String>()
-        val sortedWords = wordBoundaries.sortedWith(compareBy<WordBoundary> { it.line }.thenBy { it.word })
+        // Same scale factors as masking
+        val scaleX = bitmap.width.toFloat() / qpcWidth
+        val scaleY = bitmap.height.toFloat() / qpcHeight
+        val offsetX = 0f
+        val offsetY = 0f
         
-        for (word in sortedWords) {
-            val ayahKey = "${word.surah}_${word.ayah}"
-            if (word.word == 1 && !processedAyahs.contains(ayahKey)) {
-                processedAyahs.add(ayahKey)
-                
-                // Calculate ayah number circle position (same as in createMaskedBitmap)
-                val ayahCircleX = word.x + word.width + 25f
-                val ayahCircleY = word.y + (word.height / 2f)
-                val radius = 16f
-                
-                // Check if click is within ayah number circle
-                val distance = kotlin.math.sqrt(
-                    (wordX - ayahCircleX) * (wordX - ayahCircleX) + 
-                    (wordY - ayahCircleY) * (wordY - ayahCircleY)
-                )
-                
-                if (distance <= radius) {
-                    Log.d(TAG, "Ayah number clicked: ${word.surah}:${word.ayah}")
-                    revealAyahTemporarily(word.surah, word.ayah)
-                    return
-                }
-            }
-        }
+        Log.d(TAG, "Touch: view($x,$y) -> bitmap($bitmapX,$bitmapY)")
+        Log.d(TAG, "Scale factors: scaleX=$scaleX, scaleY=$scaleY")
         
-        // If no ayah number was clicked, check for word clicks
+        // Check for word clicks by applying the SAME transformation as masking
+        var foundWord: WordBoundary? = null
         for (word in wordBoundaries) {
-            if (wordX >= word.x && wordX <= word.x + word.width &&
-                wordY >= word.y && wordY <= word.y + word.height) {
+            // Transform word coordinates to bitmap space (same as masking)
+            val wordLeft = word.x * scaleX + offsetX
+            val wordTop = word.y * scaleY + offsetY
+            val wordRight = (word.x + word.width) * scaleX + offsetX
+            val wordBottom = (word.y + word.height) * scaleY + offsetY
+            
+            if (bitmapX >= wordLeft && bitmapX <= wordRight &&
+                bitmapY >= wordTop && bitmapY <= wordBottom) {
                 
-                Log.d(TAG, "Word clicked: ${word.surah}:${word.ayah}:${word.word}")
+                Log.d(TAG, "✅ Word clicked: ${word.surah}:${word.ayah}:${word.word}")
+                Log.d(TAG, "   QPC coords: (${word.x},${word.y},${word.width},${word.height})")
+                Log.d(TAG, "   Bitmap rect: ($wordLeft,$wordTop,$wordRight,$wordBottom)")
+                foundWord = word
                 onWordClickListener?.invoke(word)
                 
                 // Always reveal word temporarily (no mode check needed)
                 revealWordTemporarily(word)
                 break
+            }
+        }
+        
+        if (foundWord == null) {
+            Log.d(TAG, "❌ No word found at bitmap($bitmapX,$bitmapY)")
+            // Log nearby words for debugging
+            val nearbyWords = wordBoundaries.filter { word ->
+                val wordCenterX = (word.x + word.width/2) * scaleX + offsetX
+                val wordCenterY = (word.y + word.height/2) * scaleY + offsetY
+                kotlin.math.abs(bitmapX - wordCenterX) < 100 &&
+                kotlin.math.abs(bitmapY - wordCenterY) < 50
+            }.take(3)
+            
+            nearbyWords.forEach { word ->
+                val wordLeft = word.x * scaleX + offsetX
+                val wordTop = word.y * scaleY + offsetY
+                val wordRight = (word.x + word.width) * scaleX + offsetX
+                val wordBottom = (word.y + word.height) * scaleY + offsetY
+                Log.d(TAG, "  🔍 Nearby: ${word.surah}:${word.ayah}:${word.word} bitmap rect($wordLeft,$wordTop,$wordRight,$wordBottom)")
             }
         }
     }
