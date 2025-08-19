@@ -496,6 +496,14 @@ class QuranImagePage @JvmOverloads constructor(
             isAntiAlias = true
         }
         
+        // Paint for mask border to show boundaries
+        val maskBorderPaint = Paint().apply {
+            color = Color.parseColor("#FF5722") // Orange-red border
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+            isAntiAlias = true
+        }
+        
         // Calculate scale factors based on actual coordinate ranges
         // First, find the actual coordinate bounds from the data
         if (words.isNotEmpty()) {
@@ -508,26 +516,28 @@ class QuranImagePage @JvmOverloads constructor(
             Log.d(TAG, "  Bitmap size: ${originalBitmap.width}x${originalBitmap.height}")
             Log.d(TAG, "  X range: $minX to $maxX (span: ${maxX - minX})")
             Log.d(TAG, "  Y range: $minY to $maxY (span: ${maxY - minY})")
-            
-            // Use actual coordinate system bounds instead of hardcoded 1000
-            val scaleX = originalBitmap.width.toFloat() / maxX
-            val scaleY = originalBitmap.height.toFloat() / maxY
-            
-            Log.d(TAG, "  Scale factors: scaleX=$scaleX, scaleY=$scaleY")
         } else {
             Log.w(TAG, "No word boundaries available for page $currentPageNumber")
             return maskedBitmap
         }
         
-        val scaleX = if (words.isNotEmpty()) {
-            val maxX = words.maxOf { it.x + it.width }
-            originalBitmap.width.toFloat() / maxX
-        } else 1f
+        // QPC coordinates use the actual image width from the database
+        // The database shows img_width=1300, and bitmap is 1300x2103
+        // This means QPC coordinates are in actual pixel space!
+        val qpcWidth = 1300f  // From database img_width field
+        val qpcHeight = 2103f  // From actual bitmap height - QPC should match bitmap dimensions
         
-        val scaleY = if (words.isNotEmpty()) {
-            val maxY = words.maxOf { it.y + it.height }
-            originalBitmap.height.toFloat() / maxY
-        } else 1f
+        // Since QPC coordinates are already in pixel space, scaling should be 1:1
+        val scaleX = originalBitmap.width.toFloat() / qpcWidth
+        val scaleY = originalBitmap.height.toFloat() / qpcHeight
+        
+        Log.d(TAG, "  📊 QPC coordinate space: ${qpcWidth}x${qpcHeight}")
+        Log.d(TAG, "  📊 Bitmap dimensions: ${originalBitmap.width}x${originalBitmap.height}")
+        Log.d(TAG, "  📊 Scale factors: scaleX=$scaleX, scaleY=$scaleY")
+        
+        // No offsets needed - coordinates should map directly
+        val offsetX = 0f
+        val offsetY = 0f
         
         // Group words by ayah to track which ayahs we've processed
         val processedAyahs = mutableSetOf<String>()
@@ -538,16 +548,36 @@ class QuranImagePage @JvmOverloads constructor(
         for (word in sortedWords) {
             val wordKey = "${word.surah}_${word.ayah}_${word.word}"
             if (!revealedWords.contains(wordKey)) {
+                // Log detailed info for first ayah of Fatiha (Surah 1, Ayah 1)
+                if (word.surah == 1 && word.ayah == 1) {
+                    Log.d(TAG, "📍 Fatiha Ayah 1, Word ${word.word}:")
+                    Log.d(TAG, "  📏 Database coords: x=${word.x}, y=${word.y}, w=${word.width}, h=${word.height}")
+                    Log.d(TAG, "  📊 Scale factors: scaleX=$scaleX, scaleY=$scaleY")
+                    Log.d(TAG, "  📐 Offsets: offsetX=$offsetX, offsetY=$offsetY")
+                    Log.d(TAG, "  🖼️ Bitmap size: ${originalBitmap.width}x${originalBitmap.height}")
+                }
+                
                 // Calculate word rectangle with some padding
+                // Apply coordinate transformation with position adjustments
                 val rect = RectF(
-                    word.x * scaleX - 1f,
-                    word.y * scaleY - 1f,
-                    (word.x + word.width) * scaleX + 1f,
-                    (word.y + word.height) * scaleY + 1f
+                    word.x * scaleX + offsetX - 1f,
+                    word.y * scaleY + offsetY - 1f,
+                    (word.x + word.width) * scaleX + offsetX + 1f,
+                    (word.y + word.height) * scaleY + offsetY + 1f
                 )
+                
+                // Log transformed coordinates for first ayah of Fatiha
+                if (word.surah == 1 && word.ayah == 1) {
+                    Log.d(TAG, "  🎯 Final rect: left=${rect.left}, top=${rect.top}, right=${rect.right}, bottom=${rect.bottom}")
+                    Log.d(TAG, "  📏 Final size: width=${rect.width()}, height=${rect.height()}")
+                    Log.d(TAG, "  ═══════════════════════════════════════")
+                }
                 
                 // Draw white background to mask the word
                 canvas.drawRect(rect, maskPaint)
+                
+                // Draw colored border to show mask boundaries
+                canvas.drawRect(rect, maskBorderPaint)
                 
                 // Draw underline placeholder - make it slightly narrower than the word
                 val underlineY = rect.bottom - 3f
