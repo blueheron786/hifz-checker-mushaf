@@ -30,12 +30,20 @@ class QuranImagePageAdapterV2(
         RecyclerView.ViewHolder(binding.root) {
         
         var quranImagePage: QuranImagePage? = null
+        var currentPageNumber: Int = -1 // Track which page this holder is currently showing
         
         fun bind(pageNumber: Int) {
-            Log.d(TAG, "🔗 Binding page $pageNumber to ViewHolder")
+            Log.d(TAG, "🔗 Binding page $pageNumber to ViewHolder (was showing page $currentPageNumber)")
             
-            // Remove any existing page view
+            // Remove any existing page view from container
             binding.pageContainer.removeAllViews()
+            
+            // If this ViewHolder is being reused for a different page, clear the reference
+            if (currentPageNumber != pageNumber) {
+                quranImagePage = null
+                currentPageNumber = pageNumber
+                Log.d(TAG, "🔄 ViewHolder page changed from $currentPageNumber to $pageNumber, clearing cached reference")
+            }
             
             // Get or create QuranImagePage with cache management
             quranImagePage = getOrCreatePageView(pageNumber)
@@ -57,22 +65,26 @@ class QuranImagePageAdapterV2(
                 // Add to container
                 binding.pageContainer.addView(pageView)
                 
-                // Set page data first
+                // Set page data first - always call setPage to ensure proper state reset
                 val pageInfo = pageInfoMap[pageNumber]
                 Log.d(TAG, "📄 Setting page data for page $pageNumber, calling setPage()")
                 Log.d(TAG, "📊 PageInfo for page $pageNumber: ${pageInfo?.words?.size ?: 0} words")
                 pageView.setPage(pageNumber, pageInfo)
                 
-                // Set masked mode immediately (this may not work if bitmap isn't loaded yet)
-                val isMasked = fragment.isMaskedMode()
-                Log.d(TAG, "🔒 Setting masked mode to $isMasked for page $pageNumber (immediate)")
-                pageView.setMaskedMode(isMasked)
+                // Force a slight delay to ensure setPage completes before setting masked mode
+                pageView.post {
+                    // Set masked mode after setPage has been processed
+                    val isMasked = fragment.isMaskedMode()
+                    Log.d(TAG, "🔒 Setting masked mode to $isMasked for page $pageNumber (post-setPage)")
+                    pageView.setMaskedMode(isMasked)
+                }
                 
-                // Also set masked mode with a delay to ensure it takes effect after async loading
+                // Also set masked mode with a longer delay to ensure it takes effect after async loading
                 pageView.postDelayed({
+                    val isMasked = fragment.isMaskedMode()
                     Log.d(TAG, "🔒 Re-setting masked mode to $isMasked for page $pageNumber (delayed)")
                     pageView.setMaskedMode(isMasked)
-                }, 1000) // Increased delay to 1000ms to ensure asset loading completes
+                }, 1500) // Increased delay to 1500ms to ensure asset loading completes
                 
                 // Set word click listener
                 pageView.setOnWordClickListener { word ->
@@ -101,11 +113,14 @@ class QuranImagePageAdapterV2(
     }
 
     override fun onViewRecycled(holder: QuranImagePageViewHolder) {
-        // Clean up the page view but don't remove from cache
-        holder.quranImagePage?.cleanup()
+        // Clear the ViewHolder's page tracking so it can be reused properly
+        holder.currentPageNumber = -1
+        holder.quranImagePage = null
+        
+        // Remove from container to prevent multiple parent issues
         holder.binding.pageContainer.removeAllViews()
         super.onViewRecycled(holder)
-        Log.d(TAG, "♻️ ViewHolder recycled")
+        Log.d(TAG, "♻️ ViewHolder recycled and reset for reuse")
     }
 
     override fun getItemCount() = totalPages
@@ -135,6 +150,9 @@ class QuranImagePageAdapterV2(
             pageViewCache[pageNumber] = newPageView
             newPageView
         }
+        
+        // Always ensure the view is properly configured for this page
+        Log.d(TAG, "📋 Retrieved/created page view for page $pageNumber")
         
         return pageView
     }

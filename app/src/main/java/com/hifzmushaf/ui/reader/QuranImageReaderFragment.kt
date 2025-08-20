@@ -321,6 +321,9 @@ class QuranImageReaderFragment : Fragment() {
         binding.quranImagePager.layoutDirection = View.LAYOUT_DIRECTION_RTL
         binding.quranImagePager.setCurrentItem(effectiveInitialPage - 1, false) // Convert to 0-based
 
+        // Set up page change listener to handle navigation properly
+        setupPageChangeListener()
+
         binding.quranImagePager.post {
             binding.quranImagePager.setCurrentItem(effectiveInitialPage - 1, false)
             currentPagePosition = effectiveInitialPage - 1

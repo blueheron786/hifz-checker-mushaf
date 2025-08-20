@@ -101,6 +101,9 @@ class QuranImagePage @JvmOverloads constructor(
     // Coroutine scope for image operations
     private val imageScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     
+    // Track current loading job to cancel it if a new page is requested
+    private var currentLoadingJob: Job? = null
+    
     // Image cache for word images (exposed for adapter access)
     val imageCache = ImageCache()
 
@@ -108,8 +111,15 @@ class QuranImagePage @JvmOverloads constructor(
      * Set the page to display
      */
     fun setPage(pageNumber: Int, pageInfo: PageInfo? = null) {
+        Log.d(TAG, "🔄 setPage called: pageNumber=$pageNumber (current: $currentPageNumber)")
+        
+        // Always update the page even if it's the same number, in case we're reusing a cached view
         currentPageNumber = pageNumber
         revealedWords.clear()
+        
+        // Clear any existing image to show loading state
+        setImageBitmap(null)
+        
         loadPageImage()
     }
 
@@ -310,6 +320,10 @@ class QuranImagePage @JvmOverloads constructor(
      * Clean up resources when view is recycled
      */
     fun cleanup() {
+        // Cancel any ongoing loading operations
+        currentLoadingJob?.cancel()
+        currentLoadingJob = null
+        
         imageScope.cancel()
         
         // Clear the ImageView first to prevent drawing recycled bitmaps
@@ -338,8 +352,12 @@ class QuranImagePage @JvmOverloads constructor(
      * Load and display the page image
      */
     private fun loadPageImage() {
-        imageScope.launch {
+        // Cancel any previous loading operation
+        currentLoadingJob?.cancel()
+        
+        currentLoadingJob = imageScope.launch {
             try {
+                Log.d(TAG, "🚀 Starting to load page $currentPageNumber")
                 showPlaceholder()
                 
                 // Load page using fast asset-based approach
@@ -347,6 +365,7 @@ class QuranImagePage @JvmOverloads constructor(
                 
                 if (downloadedBitmap != null) {
                     withContext(Dispatchers.Main) {
+                        // The page number check is redundant since we're already in the same coroutine context
                         setOriginalBitmap(downloadedBitmap)
                     }
                 } else {
@@ -356,9 +375,13 @@ class QuranImagePage @JvmOverloads constructor(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading page image for page $currentPageNumber", e)
-                withContext(Dispatchers.Main) {
-                    showPlaceholder()
+                if (e is kotlinx.coroutines.CancellationException) {
+                    Log.d(TAG, "🔄 Page loading cancelled for page $currentPageNumber")
+                } else {
+                    Log.e(TAG, "Error loading page image for page $currentPageNumber", e)
+                    withContext(Dispatchers.Main) {
+                        showPlaceholder()
+                    }
                 }
             }
         }
