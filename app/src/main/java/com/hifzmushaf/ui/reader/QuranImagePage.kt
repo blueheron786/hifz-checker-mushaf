@@ -84,8 +84,10 @@ class QuranImagePage @JvmOverloads constructor(
     private var maskedBitmap: Bitmap? = null
     private var wordBoundaries: List<WordBoundary> = emptyList()
     private var revealedWords: MutableSet<String> = mutableSetOf()
+    private var revealedAyahs: MutableSet<String> = mutableSetOf() // Track revealed ayahs
     private var onWordClickListener: ((WordBoundary) -> Unit)? = null
     private var debugTouchPoints: MutableList<Pair<Float, Float>> = mutableListOf() // Store touch points for debugging
+    private val isDebugMode = false // Feature toggle for debug touch circles
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             handleTouch(e.x, e.y)
@@ -109,6 +111,7 @@ class QuranImagePage @JvmOverloads constructor(
     fun setPage(pageNumber: Int, pageInfo: PageInfo? = null) {
         currentPageNumber = pageNumber
         revealedWords.clear()
+        revealedAyahs.clear() // Clear revealed ayahs when changing pages
         loadPageImage()
     }
 
@@ -274,6 +277,7 @@ class QuranImagePage @JvmOverloads constructor(
         if (currentPageNumber != pageNum) {
             currentPageNumber = pageNum
             revealedWords.clear()
+            revealedAyahs.clear() // Clear revealed ayahs when changing pages
             loadPageImage()
         }
     }
@@ -577,8 +581,8 @@ class QuranImagePage @JvmOverloads constructor(
             }
         }
         
-        // Draw debug touch points as red circles
-        if (debugTouchPoints.isNotEmpty()) {
+        // Draw debug touch points as red circles (only in debug mode)
+        if (isDebugMode && debugTouchPoints.isNotEmpty()) {
             val touchPaint = Paint().apply {
                 color = Color.RED
                 style = Paint.Style.FILL
@@ -600,6 +604,33 @@ class QuranImagePage @JvmOverloads constructor(
             }
             
             Log.d(TAG, "🔴 Drew ${debugTouchPoints.size} debug touch circles")
+        }
+        
+        // Draw ayah number click areas for debugging (only in debug mode)
+        if (isDebugMode) {
+            val ayahNumberPaint = Paint().apply {
+                color = Color.BLUE
+                style = Paint.Style.STROKE
+                strokeWidth = 2f
+                alpha = 150 // Semi-transparent
+            }
+            
+            val ayahEndWords = getAyahEndWords()
+            for ((ayahKey, lastWord) in ayahEndWords) {
+                val wordRight = (lastWord.x + lastWord.width) * scaleX + offsetX
+                val wordTop = lastWord.y * scaleY + offsetY
+                val wordBottom = (lastWord.y + lastWord.height) * scaleY + offsetY
+                
+                // Draw ayah number click area
+                val ayahNumberLeft = wordRight + 5f
+                val ayahNumberRight = ayahNumberLeft + 30f
+                val ayahNumberTop = wordTop
+                val ayahNumberBottom = wordBottom
+                
+                canvas.drawRect(ayahNumberLeft, ayahNumberTop, ayahNumberRight, ayahNumberBottom, ayahNumberPaint)
+            }
+            
+            Log.d(TAG, "🔵 Drew ${ayahEndWords.size} ayah number click areas")
         }
         
         return maskedBitmap
@@ -689,8 +720,8 @@ class QuranImagePage @JvmOverloads constructor(
             }
             originalBitmap != null && !originalBitmap!!.isRecycled -> {
                 Log.d(TAG, "📄 Showing ORIGINAL bitmap for page $currentPageNumber")
-                // Create a copy with debug touch circles if we have touch points
-                if (debugTouchPoints.isNotEmpty()) {
+                // Create a copy with debug touch circles if we have touch points and debug mode is enabled
+                if (isDebugMode && debugTouchPoints.isNotEmpty()) {
                     addDebugTouchCircles(originalBitmap!!)
                 } else {
                     originalBitmap
@@ -721,7 +752,7 @@ class QuranImagePage @JvmOverloads constructor(
      * Add debug touch circles to a bitmap (for non-masked mode)
      */
     private fun addDebugTouchCircles(originalBitmap: Bitmap): Bitmap {
-        if (debugTouchPoints.isEmpty()) return originalBitmap
+        if (!isDebugMode || debugTouchPoints.isEmpty()) return originalBitmap
         
         val bitmapWithCircles = try {
             originalBitmap.copy(Bitmap.Config.ARGB_8888, true)
@@ -1017,10 +1048,12 @@ class QuranImagePage @JvmOverloads constructor(
             val bitmapX = touchPoint[0]
             val bitmapY = touchPoint[1]
             
-            // Store touch point for debugging (in bitmap coordinates)
-            debugTouchPoints.add(Pair(bitmapX, bitmapY))
-            if (debugTouchPoints.size > 5) {
-                debugTouchPoints.removeAt(0)
+            // Store touch point for debugging (only if debug mode is enabled)
+            if (isDebugMode) {
+                debugTouchPoints.add(Pair(bitmapX, bitmapY))
+                if (debugTouchPoints.size > 5) {
+                    debugTouchPoints.removeAt(0)
+                }
             }
             
             // Use the SAME coordinate transformation as createMaskedBitmap
@@ -1063,6 +1096,10 @@ class QuranImagePage @JvmOverloads constructor(
             
             if (foundWord == null) {
                 Log.d(TAG, "❌ No word found at bitmap($bitmapX,$bitmapY)")
+                
+                // Check if this is a click on an ayah number
+                checkForAyahNumberClick(bitmapX, bitmapY, scaleX, scaleY, offsetX, offsetY)
+                
                 // Log nearby words for debugging with increased radius
                 val nearbyWords = wordBoundaries.mapNotNull { word ->
                     val wordCenterX = (word.x + word.width/2) * scaleX + offsetX
@@ -1091,6 +1128,120 @@ class QuranImagePage @JvmOverloads constructor(
         } else {
             Log.e(TAG, "❌ Failed to invert image matrix for coordinate transformation")
         }
+    }
+    
+    /**
+     * Check if the touch is on an ayah number and toggle ayah visibility
+     */
+    private fun checkForAyahNumberClick(bitmapX: Float, bitmapY: Float, scaleX: Float, scaleY: Float, offsetX: Float, offsetY: Float) {
+        // Create ayah number clickable areas based on the last word of each ayah
+        val ayahEndWords = getAyahEndWords()
+        
+        for ((ayahKey, lastWord) in ayahEndWords) {
+            // Create a clickable area after the last word of each ayah
+            // This is where the ayah number circle typically appears
+            val wordRight = (lastWord.x + lastWord.width) * scaleX + offsetX
+            val wordTop = lastWord.y * scaleY + offsetY
+            val wordBottom = (lastWord.y + lastWord.height) * scaleY + offsetY
+            
+            // Create ayah number click area: 30x30 pixel square after the last word
+            val ayahNumberLeft = wordRight + 5f  // 5px gap after word
+            val ayahNumberRight = ayahNumberLeft + 30f  // 30px wide
+            val ayahNumberTop = wordTop
+            val ayahNumberBottom = wordBottom
+            
+            // Check if click is within this ayah number area
+            if (bitmapX >= ayahNumberLeft && bitmapX <= ayahNumberRight &&
+                bitmapY >= ayahNumberTop && bitmapY <= ayahNumberBottom) {
+                
+                val parts = ayahKey.split("_")
+                val surah = parts[0].toInt()
+                val ayah = parts[1].toInt()
+                
+                Log.d(TAG, "🎯 AYAH NUMBER clicked for Surah $surah, Ayah $ayah")
+                
+                // Toggle ayah visibility
+                if (revealedAyahs.contains(ayahKey)) {
+                    hideAyah(surah, ayah)
+                } else {
+                    revealAyah(surah, ayah)
+                }
+                return // Found a match, stop checking
+            }
+        }
+    }
+    
+    /**
+     * Get the last word of each ayah to determine where ayah numbers should be
+     */
+    private fun getAyahEndWords(): Map<String, WordBoundary> {
+        val ayahEndWords = mutableMapOf<String, WordBoundary>()
+        
+        // Group words by ayah and find the last word (highest word number) in each ayah
+        val wordsByAyah = wordBoundaries.groupBy { "${it.surah}_${it.ayah}" }
+        
+        for ((ayahKey, wordsInAyah) in wordsByAyah) {
+            val lastWord = wordsInAyah.maxByOrNull { it.word }
+            lastWord?.let { ayahEndWords[ayahKey] = it }
+        }
+        
+        return ayahEndWords
+    }
+    
+    /**
+     * Reveal an entire ayah
+     */
+    private fun revealAyah(surahNumber: Int, ayahNumber: Int) {
+        val ayahKey = "${surahNumber}_${ayahNumber}"
+        revealedAyahs.add(ayahKey)
+        
+        // Find all words in this ayah
+        val ayahWords = wordBoundaries.filter { it.surah == surahNumber && it.ayah == ayahNumber }
+        val ayahWordKeys = ayahWords.map { "${it.surah}_${it.ayah}_${it.word}" }
+        
+        // Add all words of this ayah to revealed words
+        revealedWords.addAll(ayahWordKeys)
+        
+        Log.d(TAG, "👁️ Revealed ayah $surahNumber:$ayahNumber (${ayahWords.size} words)")
+        
+        // Recreate masked bitmap if in masked mode
+        updateMaskedDisplay()
+    }
+    
+    /**
+     * Hide an entire ayah
+     */
+    private fun hideAyah(surahNumber: Int, ayahNumber: Int) {
+        val ayahKey = "${surahNumber}_${ayahNumber}"
+        revealedAyahs.remove(ayahKey)
+        
+        // Find all words in this ayah
+        val ayahWords = wordBoundaries.filter { it.surah == surahNumber && it.ayah == ayahNumber }
+        val ayahWordKeys = ayahWords.map { "${it.surah}_${it.ayah}_${it.word}" }
+        
+        // Remove all words of this ayah from revealed words
+        revealedWords.removeAll(ayahWordKeys.toSet())
+        
+        Log.d(TAG, "🙈 Hidden ayah $surahNumber:$ayahNumber (${ayahWords.size} words)")
+        
+        // Recreate masked bitmap if in masked mode
+        updateMaskedDisplay()
+    }
+    
+    /**
+     * Update the masked display after ayah visibility changes
+     */
+    private fun updateMaskedDisplay() {
+        if (isMaskedMode && originalBitmap != null && !originalBitmap!!.isRecycled) {
+            maskedBitmap?.let { oldMasked ->
+                if (!oldMasked.isRecycled) {
+                    oldMasked.recycle()
+                }
+            }
+            maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
+        }
+        
+        updateDisplayedImage()
     }
 
     override fun onDetachedFromWindow() {
