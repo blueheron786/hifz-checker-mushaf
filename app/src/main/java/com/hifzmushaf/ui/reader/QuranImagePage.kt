@@ -87,7 +87,7 @@ class QuranImagePage @JvmOverloads constructor(
     private var revealedAyahs: MutableSet<String> = mutableSetOf() // Track revealed ayahs
     private var onWordClickListener: ((WordBoundary) -> Unit)? = null
     private var debugTouchPoints: MutableList<Pair<Float, Float>> = mutableListOf() // Store touch points for debugging
-    private val isDebugMode = false // Feature toggle for debug touch circles
+    private val isDebugMode = true // Feature toggle for debug touch circles
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             handleTouch(e.x, e.y)
@@ -544,7 +544,16 @@ class QuranImagePage @JvmOverloads constructor(
         
         for (word in sortedWords) {
             val wordKey = "${word.surah}_${word.ayah}_${word.word}"
-            if (!revealedWords.contains(wordKey)) {
+            val shouldMask = !revealedWords.contains(wordKey)
+            
+            // Extra debugging for ayah reveals
+            if (word.surah == 1 && word.ayah == 1) {
+                Log.d(TAG, "🔍 Checking Fatiha word ${word.word}: key=$wordKey, shouldMask=$shouldMask")
+                Log.d(TAG, "🔍 Revealed words contains this key: ${revealedWords.contains(wordKey)}")
+                Log.d(TAG, "🔍 Current revealed words: ${revealedWords.take(10)}")
+            }
+            
+            if (shouldMask) {
                 // Log detailed info for first ayah of Fatiha (Surah 1, Ayah 1)
                 if (word.surah == 1 && word.ayah == 1) {
                     Log.d(TAG, "📍 Fatiha Ayah 1, Word ${word.word}:")
@@ -617,21 +626,24 @@ class QuranImagePage @JvmOverloads constructor(
             
             val ayahEndWords = getAyahEndWords()
             for ((ayahKey, lastWord) in ayahEndWords) {
-                val wordRight = (lastWord.x + lastWord.width) * scaleX + offsetX
-                val wordTop = lastWord.y * scaleY + offsetY
-                val wordBottom = (lastWord.y + lastWord.height) * scaleY + offsetY
+                val ayahClickRect = getAyahNumberPosition(lastWord, scaleX, scaleY, offsetX, offsetY)
                 
-                // Draw ayah number click area
-                val ayahNumberLeft = wordRight + 5f
-                val ayahNumberRight = ayahNumberLeft + 30f
-                val ayahNumberTop = wordTop
-                val ayahNumberBottom = wordBottom
-                
-                canvas.drawRect(ayahNumberLeft, ayahNumberTop, ayahNumberRight, ayahNumberBottom, ayahNumberPaint)
+                if (ayahClickRect != null) {
+                    canvas.drawRect(ayahClickRect, ayahNumberPaint)
+                }
             }
             
             Log.d(TAG, "🔵 Drew ${ayahEndWords.size} ayah number click areas")
         }
+        
+        // Summary logging
+        val totalWords = words.size
+        val revealedCount = revealedWords.size
+        val maskedCount = words.count { word ->
+            val wordKey = "${word.surah}_${word.ayah}_${word.word}"
+            !revealedWords.contains(wordKey)
+        }
+        Log.d(TAG, "📊 Masking summary: $totalWords total words, $revealedCount revealed, $maskedCount masked")
         
         return maskedBitmap
     }
@@ -1134,31 +1146,40 @@ class QuranImagePage @JvmOverloads constructor(
      * Check if the touch is on an ayah number and toggle ayah visibility
      */
     private fun checkForAyahNumberClick(bitmapX: Float, bitmapY: Float, scaleX: Float, scaleY: Float, offsetX: Float, offsetY: Float) {
+        Log.d(TAG, "🔍 checkForAyahNumberClick called at ($bitmapX, $bitmapY)")
+        
         // Create ayah number clickable areas based on the last word of each ayah
         val ayahEndWords = getAyahEndWords()
+        Log.d(TAG, "🔍 Found ${ayahEndWords.size} ayah end words to check")
         
         for ((ayahKey, lastWord) in ayahEndWords) {
-            // Create a clickable area after the last word of each ayah
-            // This is where the ayah number circle typically appears
-            val wordRight = (lastWord.x + lastWord.width) * scaleX + offsetX
-            val wordTop = lastWord.y * scaleY + offsetY
-            val wordBottom = (lastWord.y + lastWord.height) * scaleY + offsetY
+            // Calculate smart ayah number position based on word gaps
+            val ayahClickRect = getAyahNumberPosition(lastWord, scaleX, scaleY, offsetX, offsetY)
             
-            // Create ayah number click area: 30x30 pixel square after the last word
-            val ayahNumberLeft = wordRight + 5f  // 5px gap after word
-            val ayahNumberRight = ayahNumberLeft + 30f  // 30px wide
-            val ayahNumberTop = wordTop
-            val ayahNumberBottom = wordBottom
-            
-            // Check if click is within this ayah number area
-            if (bitmapX >= ayahNumberLeft && bitmapX <= ayahNumberRight &&
-                bitmapY >= ayahNumberTop && bitmapY <= ayahNumberBottom) {
+            if (ayahClickRect != null) {
+                Log.d(TAG, "🔍 Checking ayah $ayahKey: click area (${ayahClickRect.left}, ${ayahClickRect.top}) to (${ayahClickRect.right}, ${ayahClickRect.bottom})")
+                
+                // Check if click is within this ayah number area
+                if (bitmapX >= ayahClickRect.left && bitmapX <= ayahClickRect.right &&
+                    bitmapY >= ayahClickRect.top && bitmapY <= ayahClickRect.bottom) {
                 
                 val parts = ayahKey.split("_")
                 val surah = parts[0].toInt()
                 val ayah = parts[1].toInt()
                 
                 Log.d(TAG, "🎯 AYAH NUMBER clicked for Surah $surah, Ayah $ayah")
+                
+                // Add debug touch point for ayah clicks
+                if (isDebugMode) {
+                    debugTouchPoints.add(Pair(bitmapX, bitmapY))
+                    // Keep only last 10 touch points to avoid clutter
+                    if (debugTouchPoints.size > 10) {
+                        debugTouchPoints.removeAt(0)
+                    }
+                }
+                
+                // Show immediate feedback
+                android.widget.Toast.makeText(context, "Ayah $surah:$ayah clicked!", android.widget.Toast.LENGTH_SHORT).show()
                 
                 // Toggle ayah visibility
                 if (revealedAyahs.contains(ayahKey)) {
@@ -1168,7 +1189,10 @@ class QuranImagePage @JvmOverloads constructor(
                 }
                 return // Found a match, stop checking
             }
+            } // Close the "if (ayahClickRect != null)" block
         }
+        
+        Log.d(TAG, "🔍 No ayah number click area matched for ($bitmapX, $bitmapY)")
     }
     
     /**
@@ -1185,7 +1209,64 @@ class QuranImagePage @JvmOverloads constructor(
             lastWord?.let { ayahEndWords[ayahKey] = it }
         }
         
+        Log.d(TAG, "🔍 Found ${ayahEndWords.size} ayah end words")
+        
         return ayahEndWords
+    }
+    
+    /**
+     * Calculate ayah number position based on the gap between ayahs
+     */
+    private fun getAyahNumberPosition(lastWordOfAyah: WordBoundary, scaleX: Float, scaleY: Float, offsetX: Float, offsetY: Float): RectF? {
+        // Find the next word after this ayah (first word of next ayah or next line)
+        val nextWord = findNextWordAfterAyah(lastWordOfAyah)
+        
+        if (nextWord != null && lastWordOfAyah.line == nextWord.line) {
+            // Same line: ayah number is in the gap between words
+            val lastWordRight = (lastWordOfAyah.x + lastWordOfAyah.width) * scaleX + offsetX
+            val nextWordLeft = nextWord.x * scaleX + offsetX
+            val gapCenter = (lastWordRight + nextWordLeft) / 2f
+            val gapWidth = nextWordLeft - lastWordRight
+            
+            // Use 80% of the gap width, centered
+            val clickWidth = (gapWidth * 0.8f).coerceAtLeast(40f) // Minimum 40px wide
+            val clickLeft = gapCenter - clickWidth / 2f
+            val clickRight = gapCenter + clickWidth / 2f
+            
+            val wordTop = lastWordOfAyah.y * scaleY + offsetY
+            val wordBottom = (lastWordOfAyah.y + lastWordOfAyah.height) * scaleY + offsetY
+            
+            Log.d(TAG, "🎯 Ayah ${lastWordOfAyah.surah}:${lastWordOfAyah.ayah} - gap positioning: gap=$gapWidth, center=$gapCenter, width=$clickWidth")
+            
+            return RectF(clickLeft, wordTop, clickRight, wordBottom)
+        } else {
+            // End of line: ayah number is typically to the right of the last word
+            val lastWordRight = (lastWordOfAyah.x + lastWordOfAyah.width) * scaleX + offsetX
+            val clickLeft = lastWordRight + 10f // Small gap
+            val clickRight = clickLeft + 60f // Wider for end-of-line
+            
+            val wordTop = lastWordOfAyah.y * scaleY + offsetY
+            val wordBottom = (lastWordOfAyah.y + lastWordOfAyah.height) * scaleY + offsetY
+            
+            Log.d(TAG, "🎯 Ayah ${lastWordOfAyah.surah}:${lastWordOfAyah.ayah} - end of line positioning")
+            
+            return RectF(clickLeft, wordTop, clickRight, wordBottom)
+        }
+    }
+    
+    /**
+     * Find the word that comes after the given ayah (next ayah's first word or next line)
+     */
+    private fun findNextWordAfterAyah(lastWordOfAyah: WordBoundary): WordBoundary? {
+        // Look for the next word in sequence
+        val sameLineWords = wordBoundaries.filter { 
+            it.line == lastWordOfAyah.line && 
+            (it.surah > lastWordOfAyah.surah || 
+             (it.surah == lastWordOfAyah.surah && it.ayah > lastWordOfAyah.ayah) ||
+             (it.surah == lastWordOfAyah.surah && it.ayah == lastWordOfAyah.ayah && it.word > lastWordOfAyah.word))
+        }.sortedWith(compareBy<WordBoundary> { it.surah }.thenBy { it.ayah }.thenBy { it.word })
+        
+        return sameLineWords.firstOrNull()
     }
     
     /**
@@ -1203,9 +1284,30 @@ class QuranImagePage @JvmOverloads constructor(
         revealedWords.addAll(ayahWordKeys)
         
         Log.d(TAG, "👁️ Revealed ayah $surahNumber:$ayahNumber (${ayahWords.size} words)")
+        Log.d(TAG, "👁️ Total revealed words now: ${revealedWords.size}")
+        Log.d(TAG, "👁️ Ayah words added: $ayahWordKeys")
         
-        // Recreate masked bitmap if in masked mode
-        updateMaskedDisplay()
+        // Force immediate update without animation
+        if (isMaskedMode && originalBitmap != null && !originalBitmap!!.isRecycled) {
+            maskedBitmap?.let { oldMasked ->
+                if (!oldMasked.isRecycled) {
+                    oldMasked.recycle()
+                }
+            }
+            maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
+            
+            // Ensure UI update happens on main thread
+            post {
+                updateDisplayedImage()
+                invalidate() // Force view to redraw
+            }
+        } else {
+            // Ensure UI update happens on main thread
+            post {
+                updateDisplayedImage()
+                invalidate() // Force view to redraw
+            }
+        }
     }
     
     /**
@@ -1223,9 +1325,33 @@ class QuranImagePage @JvmOverloads constructor(
         revealedWords.removeAll(ayahWordKeys.toSet())
         
         Log.d(TAG, "🙈 Hidden ayah $surahNumber:$ayahNumber (${ayahWords.size} words)")
+        Log.d(TAG, "🙈 Total revealed words now: ${revealedWords.size}")
+        Log.d(TAG, "🙈 Ayah words removed: $ayahWordKeys")
         
-        // Recreate masked bitmap if in masked mode
-        updateMaskedDisplay()
+        // Force immediate update with animation
+        if (isMaskedMode && originalBitmap != null && !originalBitmap!!.isRecycled) {
+            maskedBitmap?.let { oldMasked ->
+                if (!oldMasked.isRecycled) {
+                    oldMasked.recycle()
+                }
+            }
+            maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
+            
+            // Quick animation to show the change
+            animate()
+                .alpha(0.8f)
+                .setDuration(100)
+                .withEndAction {
+                    updateDisplayedImage()
+                    animate()
+                        .alpha(1.0f)
+                        .setDuration(100)
+                        .start()
+                }
+                .start()
+        } else {
+            updateDisplayedImage()
+        }
     }
     
     /**

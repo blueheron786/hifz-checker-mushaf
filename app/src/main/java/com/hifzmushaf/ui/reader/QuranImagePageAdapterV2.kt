@@ -124,7 +124,7 @@ class QuranImagePageAdapterV2(
             
             // Check if we need to evict old pages
             if (pageViewCache.size >= MAX_CACHED_PAGES) {
-                val oldestPage = accessOrder.removeFirst()
+                val oldestPage = accessOrder.removeAt(0)
                 pageViewCache.remove(oldestPage)?.let { oldPageView ->
                     Log.d(TAG, "🗑️ Evicting old page $oldestPage from cache")
                     oldPageView.cleanup()

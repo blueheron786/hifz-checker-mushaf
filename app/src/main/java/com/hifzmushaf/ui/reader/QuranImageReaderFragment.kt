@@ -351,8 +351,11 @@ class QuranImageReaderFragment : Fragment() {
     }
 
     private fun setupModeToggle() {
-        // No mode toggle needed - always in placeholder mode
-        updateModeIndicator()
+        // Set up the masking toggle button
+        binding.maskingToggleButton.setOnClickListener {
+            toggleMaskedMode()
+        }
+        updateMaskingButton()
     }
     
     private fun toggleMaskedMode() {
@@ -373,28 +376,29 @@ class QuranImageReaderFragment : Fragment() {
             }
         }
         
-        updateModeIndicator()
+        updateMaskingButton()
         
         Log.d(TAG, "Toggled to ${if (maskedModeEnabled) "masked" else "normal"} mode")
     }
     
     private fun updateModeIndicator() {
-        val mode = if (maskedModeEnabled) "🔒" else "👁️"
-        binding.pageInfoTextView.text = "${binding.pageInfoTextView.text} $mode"
+        // Remove the mode indicator from the page info text
+        // Mode indicator will be shown separately
+    }
+    
+    private fun updateMaskingButton() {
+        val buttonText = if (maskedModeEnabled) "🔒 Masking ON" else "👁️ Masking OFF"
+        binding.maskingToggleButton.text = buttonText
     }
     
     private fun updateHeader(surahNumber: Int, pageNumber: Int) {
         val surah = SurahRepository.getSurahByNumber(surahNumber)
-        val surahName = surah?.arabicName ?: "Unknown"
+        val surahName = surah?.englishName ?: "Unknown"
         
-        // Convert numbers to fancy Arabic-Indic numerals
-        val fancyPageNumber = convertToArabicNumerals(pageNumber)
-        val fancySurahNumber = convertToArabicNumerals(surahNumber)
+        // Use regular English numerals
+        val baseText = "Page $pageNumber - Surah $surahNumber: $surahName"
         
-        val baseText = "صفحة $fancyPageNumber \\ سورة $fancySurahNumber - $surahName"
-        val mode = if (maskedModeEnabled) "🔒" else "👁️"
-        
-        binding.pageInfoTextView.text = "$baseText $mode"
+        binding.pageInfoTextView.text = baseText
     }
 
     fun isMaskedMode(): Boolean = maskedModeEnabled

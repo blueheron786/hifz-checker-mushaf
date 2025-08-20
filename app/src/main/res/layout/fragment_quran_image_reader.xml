@@ -24,12 +24,24 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center"
-            android:text="صفحة ١ \\ سورة ١ - الفاتحة"
+            android:text="Page 1 - Surah 1: Al-Fatiha"
             android:textColor="@android:color/white"
-            android:textDirection="rtl"
+            android:textDirection="ltr"
             android:textSize="16sp"
-            android:textStyle="bold"
-            android:fontFamily="@font/uthman_tnb_v2" />
+            android:textStyle="bold" />
+
+        <!-- Masking toggle button -->
+        <Button
+            android:id="@+id/maskingToggleButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_gravity="center"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/rounded_button"
+            android:paddingHorizontal="16dp"
+            android:text="🔒 Masking ON"
+            android:textColor="@android:color/white"
+            android:textSize="12sp" />
 
     </LinearLayout>
 
