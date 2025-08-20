@@ -358,6 +358,7 @@ class QuranImageReaderFragment : Fragment() {
         binding.maskingToggleButton.setOnClickListener {
             toggleMaskedMode()
         }
+        
         updateMaskingButton()
     }
     
@@ -515,6 +516,7 @@ class QuranImageReaderFragment : Fragment() {
         if (::databaseHelper.isInitialized) {
             databaseHelper.cleanup()
         }
+        
         _binding = null
     }
 

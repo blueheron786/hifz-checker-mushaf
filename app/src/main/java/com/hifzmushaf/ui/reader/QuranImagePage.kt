@@ -86,7 +86,9 @@ class QuranImagePage @JvmOverloads constructor(
     private var revealedWords: MutableSet<String> = mutableSetOf()
     private var onWordClickListener: ((WordBoundary) -> Unit)? = null
     private var debugTouchPoints: MutableList<Pair<Float, Float>> = mutableListOf() // Store touch points for debugging
-    private val isDebugMode = false // Feature toggle for debug touch circles
+    private val isDebugMode = false // Feature toggle for debug touch circles    
+    // Public getter for current page number
+    fun getCurrentPageNumber(): Int = currentPageNumber
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             handleTouch(e.x, e.y)
@@ -113,14 +115,21 @@ class QuranImagePage @JvmOverloads constructor(
     fun setPage(pageNumber: Int, pageInfo: PageInfo? = null) {
         Log.d(TAG, "🔄 setPage called: pageNumber=$pageNumber (current: $currentPageNumber)")
         
-        // Always update the page even if it's the same number, in case we're reusing a cached view
+        // Always update the page, but optimize if we already have the right content
+        val wasAlreadyLoaded = (currentPageNumber == pageNumber && originalBitmap != null && !originalBitmap!!.isRecycled)
+        
         currentPageNumber = pageNumber
         revealedWords.clear()
         
-        // Clear any existing image to show loading state
-        setImageBitmap(null)
-        
-        loadPageImage()
+        if (wasAlreadyLoaded) {
+            Log.d(TAG, "🔄 Page $pageNumber already loaded, refreshing display")
+            updateDisplayedImage()
+        } else {
+            Log.d(TAG, "🔄 Loading new page $pageNumber")
+            // Clear any existing image to show loading state
+            setImageBitmap(null)
+            loadPageImage()
+        }
     }
 
     /**
@@ -613,10 +622,10 @@ class QuranImagePage @JvmOverloads constructor(
                 // Calculate word rectangle with some padding
                 // Apply coordinate transformation with position adjustments
                 val rect = RectF(
-                    word.x * scaleX + offsetX - 1f,
-                    word.y * scaleY + offsetY - 1f,
-                    (word.x + word.width) * scaleX + offsetX + 1f,
-                    (word.y + word.height) * scaleY + offsetY + 1f
+                    word.x * scaleX + offsetX - 7f,
+                    word.y * scaleY + offsetY - 7f,
+                    (word.x + word.width) * scaleX + offsetX + 3f,
+                    (word.y + word.height) * scaleY + offsetY + 3f
                 )
                 
                 // Log transformed coordinates for first ayah of Fatiha
@@ -747,7 +756,7 @@ class QuranImagePage @JvmOverloads constructor(
     /**
      * Update the displayed image based on current mode
      */
-    private fun updateDisplayedImage() {
+    fun updateDisplayedImage() {
         Log.d(TAG, "🖼️ updateDisplayedImage() called for page $currentPageNumber - isMaskedMode: $isMaskedMode")
         
         // Safety check: ensure we don't try to display recycled bitmaps
