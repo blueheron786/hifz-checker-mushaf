@@ -118,6 +118,7 @@ class QuranImagePage @JvmOverloads constructor(
     // Whether we're currently showing a placeholder bitmap (loading/empty)
     @Volatile private var showingPlaceholder: Boolean = false
     fun isShowingPlaceholder(): Boolean = showingPlaceholder
+    fun isLoadingInProgress(): Boolean = currentLoadingJob?.isActive == true
     
     // Image cache for word images (exposed for adapter access)
     val imageCache = ImageCache()
@@ -441,9 +442,11 @@ class QuranImagePage @JvmOverloads constructor(
         Log.d(TAG, "🚀 Loading full page image $pageNumber from assets")
         
         try {
-            // Show initial loading state
+            // Show initial loading state (invisible placeholder)
             withContext(Dispatchers.Main) {
-                setImageBitmap(createLoadingPlaceholder("Loading page $pageNumber..."))
+                // Clear current image and make view invisible while loading
+                setImageDrawable(null)
+                alpha = 0f
                 showingPlaceholder = true
             }
             
@@ -862,6 +865,8 @@ class QuranImagePage @JvmOverloads constructor(
             try {
         setImageBitmap(bitmapToShow)
         showingPlaceholder = false
+        // Smoothly fade in the real content to avoid any visual glitch
+        animate().alpha(1f).setDuration(120).start()
                 Log.d(TAG, "✅ Bitmap set successfully for page $currentPageNumber")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Error setting bitmap: ${e.message}")
@@ -874,7 +879,7 @@ class QuranImagePage @JvmOverloads constructor(
                 }
             }
         } else {
-            Log.w(TAG, "⚠️ No valid bitmap to display, showing placeholder")
+            Log.w(TAG, "⚠️ No valid bitmap to display, showing invisible placeholder")
             showPlaceholder()
             // Safety: if nothing is loading, trigger a reload
             if (currentLoadingJob?.isActive != true) {
@@ -927,7 +932,9 @@ class QuranImagePage @JvmOverloads constructor(
      * Show a placeholder while loading
      */
     private fun showPlaceholder() {
-        setImageBitmap(createPlaceholderBitmap())
+        // Clear any drawable and make the view invisible while in placeholder state
+        setImageDrawable(null)
+        alpha = 0f
         showingPlaceholder = true
     }
 
