@@ -87,7 +87,7 @@ class QuranImagePage @JvmOverloads constructor(
     private var revealedAyahs: MutableSet<String> = mutableSetOf() // Track revealed ayahs
     private var onWordClickListener: ((WordBoundary) -> Unit)? = null
     private var debugTouchPoints: MutableList<Pair<Float, Float>> = mutableListOf() // Store touch points for debugging
-    private val isDebugMode = true // Feature toggle for debug touch circles
+    private val isDebugMode = false // Feature toggle for debug touch circles
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             handleTouch(e.x, e.y)
@@ -615,27 +615,6 @@ class QuranImagePage @JvmOverloads constructor(
             Log.d(TAG, "🔴 Drew ${debugTouchPoints.size} debug touch circles")
         }
         
-        // Draw ayah number click areas for debugging (only in debug mode)
-        if (isDebugMode) {
-            val ayahNumberPaint = Paint().apply {
-                color = Color.BLUE
-                style = Paint.Style.STROKE
-                strokeWidth = 2f
-                alpha = 150 // Semi-transparent
-            }
-            
-            val ayahEndWords = getAyahEndWords()
-            for ((ayahKey, lastWord) in ayahEndWords) {
-                val ayahClickRect = getAyahNumberPosition(lastWord, scaleX, scaleY, offsetX, offsetY)
-                
-                if (ayahClickRect != null) {
-                    canvas.drawRect(ayahClickRect, ayahNumberPaint)
-                }
-            }
-            
-            Log.d(TAG, "🔵 Drew ${ayahEndWords.size} ayah number click areas")
-        }
-        
         // Summary logging
         val totalWords = words.size
         val revealedCount = revealedWords.size
@@ -1109,30 +1088,8 @@ class QuranImagePage @JvmOverloads constructor(
             if (foundWord == null) {
                 Log.d(TAG, "❌ No word found at bitmap($bitmapX,$bitmapY)")
                 
-                // Check if this is a click on an ayah number
-                checkForAyahNumberClick(bitmapX, bitmapY, scaleX, scaleY, offsetX, offsetY)
-                
-                // Log nearby words for debugging with increased radius
-                val nearbyWords = wordBoundaries.mapNotNull { word ->
-                    val wordCenterX = (word.x + word.width/2) * scaleX + offsetX
-                    val wordCenterY = (word.y + word.height/2) * scaleY + offsetY
-                    val distance = kotlin.math.sqrt(
-                        (bitmapX - wordCenterX) * (bitmapX - wordCenterX) + 
-                        (bitmapY - wordCenterY) * (bitmapY - wordCenterY)
-                    )
-                    if (distance < 150) { // Increased search radius
-                        Pair(word, distance)
-                    } else null
-                }.sortedBy { it.second }.take(5) // Show top 5 closest words
-                
-                Log.d(TAG, "Found ${nearbyWords.size} nearby words:")
-                nearbyWords.forEach { (word, distance) ->
-                    val wordLeft = word.x * scaleX + offsetX
-                    val wordTop = word.y * scaleY + offsetY
-                    val wordRight = (word.x + word.width) * scaleX + offsetX
-                    val wordBottom = (word.y + word.height) * scaleY + offsetY
-                    Log.d(TAG, "  🔍 ${word.surah}:${word.ayah}:${word.word} dist=${distance.toInt()} rect($wordLeft,$wordTop,$wordRight,$wordBottom)")
-                }
+                // Check if this is a click within an ayah area (not on a specific word)
+                checkForAyahAreaClick(bitmapX, bitmapY, scaleX, scaleY, offsetX, offsetY)
             }
             
             // Update display to show the new touch circle
@@ -1143,130 +1100,66 @@ class QuranImagePage @JvmOverloads constructor(
     }
     
     /**
-     * Check if the touch is on an ayah number and toggle ayah visibility
+     * Check if the touch is within an ayah area and reveal/hide the entire ayah
      */
-    private fun checkForAyahNumberClick(bitmapX: Float, bitmapY: Float, scaleX: Float, scaleY: Float, offsetX: Float, offsetY: Float) {
-        Log.d(TAG, "🔍 checkForAyahNumberClick called at ($bitmapX, $bitmapY)")
+    private fun checkForAyahAreaClick(bitmapX: Float, bitmapY: Float, scaleX: Float, scaleY: Float, offsetX: Float, offsetY: Float) {
+        Log.d(TAG, "🔍 checkForAyahAreaClick called at ($bitmapX, $bitmapY)")
         
-        // Create ayah number clickable areas based on the last word of each ayah
-        val ayahEndWords = getAyahEndWords()
-        Log.d(TAG, "🔍 Found ${ayahEndWords.size} ayah end words to check")
+        // Find which ayah the touch point falls within based on word boundaries
+        val touchedAyah = findAyahAtPosition(bitmapX, bitmapY, scaleX, scaleY, offsetX, offsetY)
         
-        for ((ayahKey, lastWord) in ayahEndWords) {
-            // Calculate smart ayah number position based on word gaps
-            val ayahClickRect = getAyahNumberPosition(lastWord, scaleX, scaleY, offsetX, offsetY)
+        if (touchedAyah != null) {
+            val ayahKey = "${touchedAyah.first}_${touchedAyah.second}"
+            val surah = touchedAyah.first
+            val ayah = touchedAyah.second
             
-            if (ayahClickRect != null) {
-                Log.d(TAG, "🔍 Checking ayah $ayahKey: click area (${ayahClickRect.left}, ${ayahClickRect.top}) to (${ayahClickRect.right}, ${ayahClickRect.bottom})")
-                
-                // Check if click is within this ayah number area
-                if (bitmapX >= ayahClickRect.left && bitmapX <= ayahClickRect.right &&
-                    bitmapY >= ayahClickRect.top && bitmapY <= ayahClickRect.bottom) {
-                
-                val parts = ayahKey.split("_")
-                val surah = parts[0].toInt()
-                val ayah = parts[1].toInt()
-                
-                Log.d(TAG, "🎯 AYAH NUMBER clicked for Surah $surah, Ayah $ayah")
-                
-                // Add debug touch point for ayah clicks
-                if (isDebugMode) {
-                    debugTouchPoints.add(Pair(bitmapX, bitmapY))
-                    // Keep only last 10 touch points to avoid clutter
-                    if (debugTouchPoints.size > 10) {
-                        debugTouchPoints.removeAt(0)
-                    }
-                }
-                
-                // Show immediate feedback
-                android.widget.Toast.makeText(context, "Ayah $surah:$ayah clicked!", android.widget.Toast.LENGTH_SHORT).show()
-                
-                // Toggle ayah visibility
-                if (revealedAyahs.contains(ayahKey)) {
-                    hideAyah(surah, ayah)
-                } else {
-                    revealAyah(surah, ayah)
-                }
-                return // Found a match, stop checking
+            Log.d(TAG, "🎯 AYAH AREA clicked for Surah $surah, Ayah $ayah")
+            
+            // Show immediate feedback
+            android.widget.Toast.makeText(context, "Ayah $surah:$ayah", android.widget.Toast.LENGTH_SHORT).show()
+            
+            // Toggle ayah visibility
+            if (revealedAyahs.contains(ayahKey)) {
+                hideAyah(surah, ayah)
+            } else {
+                revealAyah(surah, ayah)
             }
-            } // Close the "if (ayahClickRect != null)" block
-        }
-        
-        Log.d(TAG, "🔍 No ayah number click area matched for ($bitmapX, $bitmapY)")
-    }
-    
-    /**
-     * Get the last word of each ayah to determine where ayah numbers should be
-     */
-    private fun getAyahEndWords(): Map<String, WordBoundary> {
-        val ayahEndWords = mutableMapOf<String, WordBoundary>()
-        
-        // Group words by ayah and find the last word (highest word number) in each ayah
-        val wordsByAyah = wordBoundaries.groupBy { "${it.surah}_${it.ayah}" }
-        
-        for ((ayahKey, wordsInAyah) in wordsByAyah) {
-            val lastWord = wordsInAyah.maxByOrNull { it.word }
-            lastWord?.let { ayahEndWords[ayahKey] = it }
-        }
-        
-        Log.d(TAG, "🔍 Found ${ayahEndWords.size} ayah end words")
-        
-        return ayahEndWords
-    }
-    
-    /**
-     * Calculate ayah number position based on the gap between ayahs
-     */
-    private fun getAyahNumberPosition(lastWordOfAyah: WordBoundary, scaleX: Float, scaleY: Float, offsetX: Float, offsetY: Float): RectF? {
-        // Find the next word after this ayah (first word of next ayah or next line)
-        val nextWord = findNextWordAfterAyah(lastWordOfAyah)
-        
-        if (nextWord != null && lastWordOfAyah.line == nextWord.line) {
-            // Same line: ayah number is in the gap between words
-            val lastWordRight = (lastWordOfAyah.x + lastWordOfAyah.width) * scaleX + offsetX
-            val nextWordLeft = nextWord.x * scaleX + offsetX
-            val gapCenter = (lastWordRight + nextWordLeft) / 2f
-            val gapWidth = nextWordLeft - lastWordRight
-            
-            // Use 80% of the gap width, centered
-            val clickWidth = (gapWidth * 0.8f).coerceAtLeast(40f) // Minimum 40px wide
-            val clickLeft = gapCenter - clickWidth / 2f
-            val clickRight = gapCenter + clickWidth / 2f
-            
-            val wordTop = lastWordOfAyah.y * scaleY + offsetY
-            val wordBottom = (lastWordOfAyah.y + lastWordOfAyah.height) * scaleY + offsetY
-            
-            Log.d(TAG, "🎯 Ayah ${lastWordOfAyah.surah}:${lastWordOfAyah.ayah} - gap positioning: gap=$gapWidth, center=$gapCenter, width=$clickWidth")
-            
-            return RectF(clickLeft, wordTop, clickRight, wordBottom)
         } else {
-            // End of line: ayah number is typically to the right of the last word
-            val lastWordRight = (lastWordOfAyah.x + lastWordOfAyah.width) * scaleX + offsetX
-            val clickLeft = lastWordRight + 10f // Small gap
-            val clickRight = clickLeft + 60f // Wider for end-of-line
-            
-            val wordTop = lastWordOfAyah.y * scaleY + offsetY
-            val wordBottom = (lastWordOfAyah.y + lastWordOfAyah.height) * scaleY + offsetY
-            
-            Log.d(TAG, "🎯 Ayah ${lastWordOfAyah.surah}:${lastWordOfAyah.ayah} - end of line positioning")
-            
-            return RectF(clickLeft, wordTop, clickRight, wordBottom)
+            Log.d(TAG, "🔍 No ayah area found at ($bitmapX, $bitmapY)")
         }
     }
     
     /**
-     * Find the word that comes after the given ayah (next ayah's first word or next line)
+     * Find which ayah contains the given position based on word boundaries
      */
-    private fun findNextWordAfterAyah(lastWordOfAyah: WordBoundary): WordBoundary? {
-        // Look for the next word in sequence
-        val sameLineWords = wordBoundaries.filter { 
-            it.line == lastWordOfAyah.line && 
-            (it.surah > lastWordOfAyah.surah || 
-             (it.surah == lastWordOfAyah.surah && it.ayah > lastWordOfAyah.ayah) ||
-             (it.surah == lastWordOfAyah.surah && it.ayah == lastWordOfAyah.ayah && it.word > lastWordOfAyah.word))
-        }.sortedWith(compareBy<WordBoundary> { it.surah }.thenBy { it.ayah }.thenBy { it.word })
+    private fun findAyahAtPosition(bitmapX: Float, bitmapY: Float, scaleX: Float, scaleY: Float, offsetX: Float, offsetY: Float): Pair<Int, Int>? {
+        // Find the closest words to determine which ayah this position belongs to
+        val wordsWithDistance = wordBoundaries.mapNotNull { word ->
+            val wordLeft = word.x * scaleX + offsetX
+            val wordTop = word.y * scaleY + offsetY
+            val wordRight = (word.x + word.width) * scaleX + offsetX
+            val wordBottom = (word.y + word.height) * scaleY + offsetY
+            
+            // Check if the touch is roughly within the line height and horizontal span of this ayah
+            val verticalDistance = when {
+                bitmapY < wordTop -> wordTop - bitmapY
+                bitmapY > wordBottom -> bitmapY - wordBottom
+                else -> 0f // Within the line
+            }
+            
+            // Only consider words that are on the same line or very close vertically
+            if (verticalDistance <= 30f) { // Allow some tolerance for line spacing
+                val wordCenterX = (wordLeft + wordRight) / 2f
+                val horizontalDistance = kotlin.math.abs(bitmapX - wordCenterX)
+                
+                Triple(word, verticalDistance + horizontalDistance, Pair(word.surah, word.ayah))
+            } else {
+                null
+            }
+        }.sortedBy { it.second }
         
-        return sameLineWords.firstOrNull()
+        // Return the ayah of the closest word if found
+        return wordsWithDistance.firstOrNull()?.third
     }
     
     /**
