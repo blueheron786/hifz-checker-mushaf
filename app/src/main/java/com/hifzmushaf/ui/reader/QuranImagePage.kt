@@ -84,7 +84,6 @@ class QuranImagePage @JvmOverloads constructor(
     private var maskedBitmap: Bitmap? = null
     private var wordBoundaries: List<WordBoundary> = emptyList()
     private var revealedWords: MutableSet<String> = mutableSetOf()
-    private var revealedAyahs: MutableSet<String> = mutableSetOf() // Track revealed ayahs
     private var onWordClickListener: ((WordBoundary) -> Unit)? = null
     private var debugTouchPoints: MutableList<Pair<Float, Float>> = mutableListOf() // Store touch points for debugging
     private val isDebugMode = false // Feature toggle for debug touch circles
@@ -111,7 +110,6 @@ class QuranImagePage @JvmOverloads constructor(
     fun setPage(pageNumber: Int, pageInfo: PageInfo? = null) {
         currentPageNumber = pageNumber
         revealedWords.clear()
-        revealedAyahs.clear() // Clear revealed ayahs when changing pages
         loadPageImage()
     }
 
@@ -222,12 +220,14 @@ class QuranImagePage @JvmOverloads constructor(
     }
 
     /**
-     * Temporarily reveal an entire ayah for 5 seconds
+     * Temporarily reveal an entire ayah for 5 seconds with fade animation
      */
     fun revealAyahTemporarily(surahNumber: Int, ayahNumber: Int) {
         // Find all words in this ayah
         val ayahWords = wordBoundaries.filter { it.surah == surahNumber && it.ayah == ayahNumber }
         val ayahWordKeys = ayahWords.map { "${it.surah}_${it.ayah}_${it.word}" }
+        
+        Log.d(TAG, "👁️ Temporarily revealing ayah $surahNumber:$ayahNumber (${ayahWords.size} words)")
         
         // Add all words of this ayah to revealed words
         revealedWords.addAll(ayahWordKeys)
@@ -242,7 +242,19 @@ class QuranImagePage @JvmOverloads constructor(
             maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
         }
         
-        updateDisplayedImage()
+        // Quick fade out animation (100ms)
+        animate()
+            .alpha(0.8f)
+            .setDuration(100)
+            .withEndAction {
+                updateDisplayedImage()
+                // Quick fade back in
+                animate()
+                    .alpha(1.0f)
+                    .setDuration(100)
+                    .start()
+            }
+            .start()
         
         // Hide the ayah again after 5 seconds
         imageScope.launch {
@@ -259,7 +271,20 @@ class QuranImagePage @JvmOverloads constructor(
                         }
                         maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
                     }
-                    updateDisplayedImage()
+                    
+                    // Fade animation when mask reappears
+                    animate()
+                        .alpha(0.8f)
+                        .setDuration(100)
+                        .withEndAction {
+                            updateDisplayedImage()
+                            // Fade back to full visibility
+                            animate()
+                                .alpha(1.0f)
+                                .setDuration(100)
+                                .start()
+                        }
+                        .start()
                 }
             }
         }
@@ -277,7 +302,6 @@ class QuranImagePage @JvmOverloads constructor(
         if (currentPageNumber != pageNum) {
             currentPageNumber = pageNum
             revealedWords.clear()
-            revealedAyahs.clear() // Clear revealed ayahs when changing pages
             loadPageImage()
         }
     }
@@ -1100,7 +1124,7 @@ class QuranImagePage @JvmOverloads constructor(
     }
     
     /**
-     * Check if the touch is within an ayah area and reveal/hide the entire ayah
+     * Check if the touch is within an ayah area and reveal the entire ayah temporarily
      */
     private fun checkForAyahAreaClick(bitmapX: Float, bitmapY: Float, scaleX: Float, scaleY: Float, offsetX: Float, offsetY: Float) {
         Log.d(TAG, "🔍 checkForAyahAreaClick called at ($bitmapX, $bitmapY)")
@@ -1109,7 +1133,6 @@ class QuranImagePage @JvmOverloads constructor(
         val touchedAyah = findAyahAtPosition(bitmapX, bitmapY, scaleX, scaleY, offsetX, offsetY)
         
         if (touchedAyah != null) {
-            val ayahKey = "${touchedAyah.first}_${touchedAyah.second}"
             val surah = touchedAyah.first
             val ayah = touchedAyah.second
             
@@ -1118,12 +1141,8 @@ class QuranImagePage @JvmOverloads constructor(
             // Show immediate feedback
             android.widget.Toast.makeText(context, "Ayah $surah:$ayah", android.widget.Toast.LENGTH_SHORT).show()
             
-            // Toggle ayah visibility
-            if (revealedAyahs.contains(ayahKey)) {
-                hideAyah(surah, ayah)
-            } else {
-                revealAyah(surah, ayah)
-            }
+            // Reveal ayah temporarily (will fade out after 5 seconds)
+            revealAyahTemporarily(surah, ayah)
         } else {
             Log.d(TAG, "🔍 No ayah area found at ($bitmapX, $bitmapY)")
         }
@@ -1160,107 +1179,6 @@ class QuranImagePage @JvmOverloads constructor(
         
         // Return the ayah of the closest word if found
         return wordsWithDistance.firstOrNull()?.third
-    }
-    
-    /**
-     * Reveal an entire ayah
-     */
-    private fun revealAyah(surahNumber: Int, ayahNumber: Int) {
-        val ayahKey = "${surahNumber}_${ayahNumber}"
-        revealedAyahs.add(ayahKey)
-        
-        // Find all words in this ayah
-        val ayahWords = wordBoundaries.filter { it.surah == surahNumber && it.ayah == ayahNumber }
-        val ayahWordKeys = ayahWords.map { "${it.surah}_${it.ayah}_${it.word}" }
-        
-        // Add all words of this ayah to revealed words
-        revealedWords.addAll(ayahWordKeys)
-        
-        Log.d(TAG, "👁️ Revealed ayah $surahNumber:$ayahNumber (${ayahWords.size} words)")
-        Log.d(TAG, "👁️ Total revealed words now: ${revealedWords.size}")
-        Log.d(TAG, "👁️ Ayah words added: $ayahWordKeys")
-        
-        // Force immediate update without animation
-        if (isMaskedMode && originalBitmap != null && !originalBitmap!!.isRecycled) {
-            maskedBitmap?.let { oldMasked ->
-                if (!oldMasked.isRecycled) {
-                    oldMasked.recycle()
-                }
-            }
-            maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
-            
-            // Ensure UI update happens on main thread
-            post {
-                updateDisplayedImage()
-                invalidate() // Force view to redraw
-            }
-        } else {
-            // Ensure UI update happens on main thread
-            post {
-                updateDisplayedImage()
-                invalidate() // Force view to redraw
-            }
-        }
-    }
-    
-    /**
-     * Hide an entire ayah
-     */
-    private fun hideAyah(surahNumber: Int, ayahNumber: Int) {
-        val ayahKey = "${surahNumber}_${ayahNumber}"
-        revealedAyahs.remove(ayahKey)
-        
-        // Find all words in this ayah
-        val ayahWords = wordBoundaries.filter { it.surah == surahNumber && it.ayah == ayahNumber }
-        val ayahWordKeys = ayahWords.map { "${it.surah}_${it.ayah}_${it.word}" }
-        
-        // Remove all words of this ayah from revealed words
-        revealedWords.removeAll(ayahWordKeys.toSet())
-        
-        Log.d(TAG, "🙈 Hidden ayah $surahNumber:$ayahNumber (${ayahWords.size} words)")
-        Log.d(TAG, "🙈 Total revealed words now: ${revealedWords.size}")
-        Log.d(TAG, "🙈 Ayah words removed: $ayahWordKeys")
-        
-        // Force immediate update with animation
-        if (isMaskedMode && originalBitmap != null && !originalBitmap!!.isRecycled) {
-            maskedBitmap?.let { oldMasked ->
-                if (!oldMasked.isRecycled) {
-                    oldMasked.recycle()
-                }
-            }
-            maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
-            
-            // Quick animation to show the change
-            animate()
-                .alpha(0.8f)
-                .setDuration(100)
-                .withEndAction {
-                    updateDisplayedImage()
-                    animate()
-                        .alpha(1.0f)
-                        .setDuration(100)
-                        .start()
-                }
-                .start()
-        } else {
-            updateDisplayedImage()
-        }
-    }
-    
-    /**
-     * Update the masked display after ayah visibility changes
-     */
-    private fun updateMaskedDisplay() {
-        if (isMaskedMode && originalBitmap != null && !originalBitmap!!.isRecycled) {
-            maskedBitmap?.let { oldMasked ->
-                if (!oldMasked.isRecycled) {
-                    oldMasked.recycle()
-                }
-            }
-            maskedBitmap = createMaskedBitmap(originalBitmap!!, wordBoundaries)
-        }
-        
-        updateDisplayedImage()
     }
 
     override fun onDetachedFromWindow() {
