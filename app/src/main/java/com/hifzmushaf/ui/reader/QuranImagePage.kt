@@ -100,11 +100,24 @@ class QuranImagePage @JvmOverloads constructor(
         }
     })
 
-    // Coroutine scope for image operations
-    private val imageScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    // Coroutine scope for image operations (must survive detach/attach)
+    // Use var so we can recreate if it gets cancelled
+    private var imageScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    // Ensure scope is active; recreate if cancelled/completed
+    private fun ensureImageScope() {
+        val job = imageScope.coroutineContext[Job]
+        if (job == null || job.isCancelled || job.isCompleted) {
+            Log.d(TAG, "♻️ Recreating imageScope for page $currentPageNumber")
+            imageScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        }
+    }
     
     // Track current loading job to cancel it if a new page is requested
     private var currentLoadingJob: Job? = null
+    // Whether we're currently showing a placeholder bitmap (loading/empty)
+    @Volatile private var showingPlaceholder: Boolean = false
+    fun isShowingPlaceholder(): Boolean = showingPlaceholder
     
     // Image cache for word images (exposed for adapter access)
     val imageCache = ImageCache()
@@ -115,20 +128,23 @@ class QuranImagePage @JvmOverloads constructor(
     fun setPage(pageNumber: Int, pageInfo: PageInfo? = null) {
         Log.d(TAG, "🔄 setPage called: pageNumber=$pageNumber (current: $currentPageNumber)")
         
-        // Always update the page, but optimize if we already have the right content
-        val wasAlreadyLoaded = (currentPageNumber == pageNumber && originalBitmap != null && !originalBitmap!!.isRecycled)
+        // CRITICAL FIX: Always force reload when page number changes to prevent blank pages
+        // during forward/backward navigation combinations
+        val needsReload = (currentPageNumber != pageNumber || originalBitmap == null || originalBitmap!!.isRecycled)
         
         currentPageNumber = pageNumber
         revealedWords.clear()
         
-        if (wasAlreadyLoaded) {
+        if (needsReload) {
+            Log.d(TAG, "🔄 Loading new page $pageNumber (force reload)")
+            // Show a placeholder immediately to avoid any blank state
+            showPlaceholder()
+            // Clear cached bitmaps to ensure fresh load
+            clearBitmapCache()
+            loadPageImage()
+        } else {
             Log.d(TAG, "🔄 Page $pageNumber already loaded, refreshing display")
             updateDisplayedImage()
-        } else {
-            Log.d(TAG, "🔄 Loading new page $pageNumber")
-            // Clear any existing image to show loading state
-            setImageBitmap(null)
-            loadPageImage()
         }
     }
 
@@ -326,6 +342,19 @@ class QuranImagePage @JvmOverloads constructor(
     }
 
     /**
+     * Clear bitmap cache to force fresh loading
+     */
+    private fun clearBitmapCache() {
+        Log.d(TAG, "🗑️ Clearing bitmap cache for page $currentPageNumber")
+        
+        // Clear bitmaps without recycling (in case they're still being used elsewhere)
+        originalBitmap = null
+        maskedBitmap = null
+        
+    // Keep any existing placeholder; do not set null drawable to avoid blanks
+    }
+
+    /**
      * Clean up resources when view is recycled
      */
     fun cleanup() {
@@ -335,8 +364,8 @@ class QuranImagePage @JvmOverloads constructor(
         
         imageScope.cancel()
         
-        // Clear the ImageView first to prevent drawing recycled bitmaps
-        setImageBitmap(null)
+    // Show placeholder instead of null to avoid transient blanks
+    showPlaceholder()
         
         // Safely recycle bitmaps
         originalBitmap?.let { bitmap ->
@@ -364,30 +393,39 @@ class QuranImagePage @JvmOverloads constructor(
         // Cancel any previous loading operation
         currentLoadingJob?.cancel()
         
+        ensureImageScope()
+        val requestedPage = currentPageNumber
         currentLoadingJob = imageScope.launch {
             try {
-                Log.d(TAG, "🚀 Starting to load page $currentPageNumber")
+                Log.d(TAG, "🚀 Starting to load page $requestedPage")
                 showPlaceholder()
                 
                 // Load page using fast asset-based approach
-                val downloadedBitmap = downloadPageImage(currentPageNumber)
+                val downloadedBitmap = downloadPageImage(requestedPage)
                 
                 if (downloadedBitmap != null) {
                     withContext(Dispatchers.Main) {
-                        // The page number check is redundant since we're already in the same coroutine context
-                        setOriginalBitmap(downloadedBitmap)
+                        // Guard against stale results if user navigated to another page
+                        if (currentPageNumber == requestedPage) {
+                            setOriginalBitmap(downloadedBitmap)
+                        } else {
+                            Log.d(TAG, "⏭️ Discarding loaded bitmap for page $requestedPage; current is $currentPageNumber")
+                            try {
+                                if (!downloadedBitmap.isRecycled) downloadedBitmap.recycle()
+                            } catch (_: Exception) {}
+                        }
                     }
                 } else {
-                    Log.e(TAG, "Failed to load page $currentPageNumber")
+                    Log.e(TAG, "Failed to load page $requestedPage")
                     withContext(Dispatchers.Main) {
                         showPlaceholder()
                     }
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) {
-                    Log.d(TAG, "🔄 Page loading cancelled for page $currentPageNumber")
+                    Log.d(TAG, "🔄 Page loading cancelled for page $requestedPage")
                 } else {
-                    Log.e(TAG, "Error loading page image for page $currentPageNumber", e)
+                    Log.e(TAG, "Error loading page image for page $requestedPage", e)
                     withContext(Dispatchers.Main) {
                         showPlaceholder()
                     }
@@ -406,24 +444,33 @@ class QuranImagePage @JvmOverloads constructor(
             // Show initial loading state
             withContext(Dispatchers.Main) {
                 setImageBitmap(createLoadingPlaceholder("Loading page $pageNumber..."))
+                showingPlaceholder = true
             }
             
             // Load full page image from assets
-            val assetPath = "quran_pages/${pageNumber}.png"
-            val inputStream = context.assets.open(assetPath)
-            val fullPageBitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream.close()
+            val fullPageBitmap = withContext(Dispatchers.IO) {
+                val assetPath = "quran_pages/${pageNumber}.png"
+                try {
+                    context.assets.open(assetPath).use { inputStream ->
+                        BitmapFactory.decodeStream(inputStream)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Asset load error for $assetPath: ${e.message}")
+                    null
+                }
+            }
             
             if (fullPageBitmap == null) {
-                Log.e(TAG, "❌ Failed to load page image from assets: $assetPath")
-                return createPageReadyPlaceholder(pageNumber)
+                Log.e(TAG, "❌ Failed to load page image from assets for page $pageNumber")
+                // Return null so caller keeps placeholder and can retry
+                return null
             }
             
             Log.d(TAG, "✅ Successfully loaded page $pageNumber (${fullPageBitmap.width}x${fullPageBitmap.height})")
             
             // Get word boundaries for touch handling (but don't use for rendering)
             val qpcDataManager = QpcDataManager(context)
-            val wordsForPage = qpcDataManager.getWordsForPage(pageNumber)
+            val wordsForPage = withContext(Dispatchers.IO) { qpcDataManager.getWordsForPage(pageNumber) }
             Log.d(TAG, "📊 Found ${wordsForPage.size} word boundaries for touch handling")
             
             // Store word boundaries for later use in touch events
@@ -433,7 +480,8 @@ class QuranImagePage @JvmOverloads constructor(
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error loading page $pageNumber from assets: ${e.message}")
-            return createPageReadyPlaceholder(pageNumber)
+            // Return null so caller keeps placeholder and can retry
+            return null
         }
     }
 
@@ -485,9 +533,6 @@ class QuranImagePage @JvmOverloads constructor(
             Log.e(TAG, "❌ Cannot set recycled bitmap as original")
             return
         }
-        
-        // Clear ImageView first to prevent drawing issues
-        setImageBitmap(null)
         
         // Safely recycle old bitmaps
         originalBitmap?.let { oldBitmap ->
@@ -552,12 +597,13 @@ class QuranImagePage @JvmOverloads constructor(
             style = Paint.Style.FILL
         }
         
-        // Paint for underline placeholders
+        // Paint for underline placeholders (make more visible)
         val underlinePaint = Paint().apply {
-            color = Color.parseColor("#BDBDBD")
+            color = Color.parseColor("#707070")
             style = Paint.Style.STROKE
-            strokeWidth = 4f
-            pathEffect = DashPathEffect(floatArrayOf(8f, 4f), 0f) // Dashed line for better visibility
+            strokeWidth = 8f
+            pathEffect = DashPathEffect(floatArrayOf(14f, 7f), 0f) // More visible dashes
+            isAntiAlias = true
         }
         
         // Calculate scale factors based on actual coordinate ranges
@@ -671,6 +717,38 @@ class QuranImagePage @JvmOverloads constructor(
             Log.d(TAG, "🔴 Drew ${debugTouchPoints.size} debug touch circles")
         }
         
+        // Add a small masked mode badge to ensure page never looks blank
+        runCatching {
+            val badgeText = "Masked"
+            val textPaint = Paint().apply {
+                color = Color.WHITE
+                textSize = 36f
+                typeface = Typeface.DEFAULT_BOLD
+                isAntiAlias = true
+            }
+            val badgeBgPaint = Paint().apply {
+                color = Color.parseColor("#4033AA33") // semi-transparent green
+                style = Paint.Style.FILL
+            }
+            val bounds = android.graphics.Rect()
+            textPaint.getTextBounds(badgeText, 0, badgeText.length, bounds)
+            val padding = 16f
+            val margin = 24f
+            val bgRect = RectF(
+                maskedBitmap.width - bounds.width() - padding * 2 - margin,
+                margin,
+                maskedBitmap.width - margin,
+                bounds.height().toFloat() + padding * 2 + margin
+            )
+            canvas.drawRoundRect(bgRect, 12f, 12f, badgeBgPaint)
+            canvas.drawText(
+                badgeText,
+                bgRect.left + padding,
+                bgRect.top + padding + bounds.height(),
+                textPaint
+            )
+        }
+        
         // Summary logging
         val totalWords = words.size
         val revealedCount = revealedWords.size
@@ -780,18 +858,29 @@ class QuranImagePage @JvmOverloads constructor(
             }
         }
         
-        if (bitmapToShow != null) {
+    if (bitmapToShow != null) {
             try {
-                setImageBitmap(bitmapToShow)
+        setImageBitmap(bitmapToShow)
+        showingPlaceholder = false
                 Log.d(TAG, "✅ Bitmap set successfully for page $currentPageNumber")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Error setting bitmap: ${e.message}")
-                // Clear the ImageView if bitmap setting fails
-                setImageBitmap(null)
+                // Show placeholder to avoid null drawable state
+                showPlaceholder()
+                // Attempt recovery if no active load
+                if (currentLoadingJob?.isActive != true) {
+                    Log.d(TAG, "🩺 Recovering by reloading page $currentPageNumber after set failure")
+                    loadPageImage()
+                }
             }
         } else {
-            Log.w(TAG, "⚠️ No valid bitmap to display")
-            setImageBitmap(null)
+            Log.w(TAG, "⚠️ No valid bitmap to display, showing placeholder")
+            showPlaceholder()
+            // Safety: if nothing is loading, trigger a reload
+            if (currentLoadingJob?.isActive != true) {
+                Log.d(TAG, "🩺 No bitmap and no active load; triggering reload for page $currentPageNumber")
+                loadPageImage()
+            }
         }
     }
     
@@ -839,6 +928,7 @@ class QuranImagePage @JvmOverloads constructor(
      */
     private fun showPlaceholder() {
         setImageBitmap(createPlaceholderBitmap())
+        showingPlaceholder = true
     }
 
     /**
@@ -1215,23 +1305,20 @@ class QuranImagePage @JvmOverloads constructor(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        imageScope.cancel()
+        // Cancel only children to allow scope reuse on reattach
+        imageScope.coroutineContext[Job]?.cancelChildren()
         
-        // Clear the ImageView first
-        setImageBitmap(null)
+    // Keep a placeholder instead of null to prevent blank states
+    showPlaceholder()
         
-        // Safely recycle bitmaps
-        originalBitmap?.let { bitmap ->
-            if (!bitmap.isRecycled) {
-                bitmap.recycle()
-            }
-        }
-        maskedBitmap?.let { bitmap ->
-            if (!bitmap.isRecycled) {
-                bitmap.recycle()
-            }
-        }
-        imageCache.clear()
+        // Avoid recycling here; the view may be reattached soon by ViewPager2
+        // Bitmaps will be managed by setPage/updateDisplayedImage lifecycle
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        // Ensure scope is active when view is re-attached
+        ensureImageScope()
     }
 }
 

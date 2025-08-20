@@ -295,6 +295,8 @@ class QuranImageReaderFragment : Fragment() {
             Log.d(TAG, "📋 Created V2 adapter with $totalPages pages")
             
             binding.quranImagePager.adapter = pageAdapterV2
+            // Keep neighbors in memory to avoid frequent rebind/recycle churn
+            binding.quranImagePager.offscreenPageLimit = 2
             
             Log.d(TAG, "📎 Adapter attached to ViewPager2")
             
@@ -314,6 +316,7 @@ class QuranImageReaderFragment : Fragment() {
                 pageInfoMap = pageInfoMap
             )
             binding.quranImagePager.adapter = pageAdapter
+            binding.quranImagePager.offscreenPageLimit = 2
             
             Log.d(TAG, "⚠️ Using original QuranImagePageAdapter")
         }
@@ -349,8 +352,58 @@ class QuranImageReaderFragment : Fragment() {
                 
                 // Page read tracking
                 startPageReadTracking()
+
+                // One-shot verification to avoid any blank page after fast navigation
+                ensureVisiblePageHasContent(position)
             }
         })
+    }
+
+    /**
+     * Verifies the currently visible page has a drawable set; if not, attempts a lightweight recovery.
+     * This guards against rare RecyclerView/ViewPager2 races leaving the ImageView blank.
+     */
+    private fun ensureVisiblePageHasContent(position: Int) {
+        try {
+            val recyclerView = binding.quranImagePager.getChildAt(0) as? RecyclerView ?: return
+            val holder = recyclerView.findViewHolderForAdapterPosition(position) ?: run {
+                // Not laid out yet; try again shortly
+                recyclerView.postDelayed({ ensureVisiblePageHasContent(position) }, 120)
+                return
+            }
+
+            val pageContainer = holder.itemView.findViewById<android.widget.FrameLayout>(R.id.pageContainer)
+            val pageView = if (pageContainer.childCount > 0) pageContainer.getChildAt(0) else null
+
+            if (pageView is QuranImagePage) {
+                val isNullDrawable = pageView.drawable == null
+                val isPlaceholder = runCatching { pageView.isShowingPlaceholder() }.getOrElse { false }
+                if (isNullDrawable || isPlaceholder) {
+                    Log.w(TAG, "🩺 Visible page ${position + 1} has null drawable; forcing refresh")
+                    // First try to update the displayed image (self-heal path in view)
+                    pageView.updateDisplayedImage()
+
+                    // If still null shortly after, re-apply setPage via adapter rebind as last resort
+                    pageView.postDelayed({
+                        val stillNull = pageView.drawable == null
+                        val stillPlaceholder = runCatching { pageView.isShowingPlaceholder() }.getOrElse { false }
+                        if (stillNull || stillPlaceholder) {
+                            Log.w(TAG, "🛠️ Still blank/placeholder; requesting rebind for page ${position + 1}")
+                            if (usingV2Adapter && ::pageAdapterV2.isInitialized) {
+                                pageAdapterV2.notifyItemChanged(position)
+                            } else if (::pageAdapter.isInitialized) {
+                                pageAdapter.notifyItemChanged(position)
+                            }
+                        }
+                    }, 150)
+                }
+            } else {
+                // No child yet; try again shortly
+                recyclerView.postDelayed({ ensureVisiblePageHasContent(position) }, 120)
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "ensureVisiblePageHasContent failed: ${t.message}")
+        }
     }
 
     private fun setupModeToggle() {

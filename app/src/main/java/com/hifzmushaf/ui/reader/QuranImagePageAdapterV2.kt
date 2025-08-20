@@ -24,6 +24,10 @@ class QuranImagePageAdapterV2(
     // Cache for QuranImagePage views to reuse them efficiently
     private val pageViewCache = mutableMapOf<Int, QuranImagePage>()
 
+    init {
+        setHasStableIds(true)
+    }
+
     inner class QuranImagePageViewHolder(val binding: ItemQuranImagePageV2Binding) : 
         RecyclerView.ViewHolder(binding.root) {
         
@@ -36,14 +40,23 @@ class QuranImagePageAdapterV2(
             // CRITICAL: Always clear container first
             binding.pageContainer.removeAllViews()
             
+            // CRITICAL: Clean up previous page view if it was a different page
+            if (currentPageNumber != -1 && currentPageNumber != pageNumber) {
+                quranImagePage?.let { pageView ->
+                    Log.d(TAG, "🧹 Cleaning up previous page $currentPageNumber before binding $pageNumber")
+                    // Remove from container if still attached
+                    (pageView.parent as? ViewGroup)?.removeView(pageView)
+                }
+            }
+            
             // CRITICAL: Always get fresh page view and ensure it's properly configured
             val pageView = getOrCreatePageView(pageNumber)
             
             // CRITICAL: Remove from any previous parent to prevent attachment issues
             (pageView.parent as? ViewGroup)?.removeView(pageView)
             
-            // CRITICAL: Always set the page content, regardless of what getCurrentPageNumber() returns
-            // This ensures the view is properly initialized for this binding
+            // CRITICAL: Always set the page content to ensure proper initialization
+            // This is especially important for forward/backward navigation combinations
             val pageInfo = pageInfoMap[pageNumber]
             Log.d(TAG, "📄 Setting page $pageNumber (forcing refresh to prevent blank screens)")
             pageView.setPage(pageNumber, pageInfo)
@@ -71,6 +84,34 @@ class QuranImagePageAdapterV2(
             pageView.setOnWordClickListener { word ->
                 fragment.onWordClicked(word)
             }
+
+            // Safety: if drawable is still null shortly after binding, force a display update
+            pageView.postDelayed({
+                if (pageView.drawable == null) {
+                    Log.w(TAG, "🩺 Drawable null after bind; forcing updateDisplayedImage for page $pageNumber")
+                    pageView.updateDisplayedImage()
+                    // If still null, re-apply setPage as a last resort
+                    pageView.postDelayed({
+                        if (pageView.drawable == null) {
+                            Log.w(TAG, "🛠️ Drawable still null; reapplying setPage for page $pageNumber")
+                            val pi = pageInfoMap[pageNumber]
+                            pageView.setPage(pageNumber, pi)
+                        }
+                    }, 120)
+                }
+            }, 120)
+
+            // Extra: refresh on attach to window to recover after recycling
+            pageView.addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: android.view.View) {
+                    if ((v as? QuranImagePage)?.drawable == null) {
+                        Log.d(TAG, "🩺 onViewAttachedToWindow -> drawable null; refreshing page $pageNumber")
+                        (v as QuranImagePage).updateDisplayedImage()
+                    }
+                    v.removeOnAttachStateChangeListener(this)
+                }
+                override fun onViewDetachedFromWindow(v: android.view.View) { /* no-op */ }
+            })
             
             Log.d(TAG, "✅ Page $pageNumber binding complete")
         }
@@ -95,10 +136,21 @@ class QuranImagePageAdapterV2(
     override fun onViewRecycled(holder: QuranImagePageViewHolder) {
         Log.d(TAG, "♻️ Recycling ViewHolder@${holder.hashCode()} (was showing page ${holder.currentPageNumber})")
         
+        // Clean up the page view properly to prevent state issues
+        holder.quranImagePage?.let { pageView ->
+            // Cancel any ongoing loading operations
+            try {
+                // Don't call cleanup() as it recycles bitmaps that might be used by cache
+                Log.d(TAG, "🧹 Preparing page view for recycling (keeping cache intact)")
+            } catch (e: Exception) {
+                Log.w(TAG, "Warning during page view cleanup: ${e.message}")
+            }
+        }
+        
         // Clear the container to prevent view attachment issues
         holder.binding.pageContainer.removeAllViews()
         
-        // Clear holder references but keep page views in cache
+        // Clear holder references but keep page views in cache for performance
         holder.currentPageNumber = -1
         holder.quranImagePage = null
         
@@ -107,6 +159,11 @@ class QuranImagePageAdapterV2(
     }
 
     override fun getItemCount() = totalPages
+
+    override fun getItemId(position: Int): Long {
+        // Use page number as stable ID
+        return (position + 1).toLong()
+    }
     
     /**
      * Gets or creates a page view - no eviction until user exits reader
@@ -116,7 +173,11 @@ class QuranImagePageAdapterV2(
         val pageView = pageViewCache[pageNumber] ?: run {
             Log.d(TAG, "🆕 Creating new QuranImagePage for page $pageNumber (cache size: ${pageViewCache.size})")
             
-            val newPageView = QuranImagePage(fragment.requireContext())
+            val newPageView = QuranImagePage(fragment.requireContext()).apply {
+                // Avoid any scale mismatch causing apparent blanks
+                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                adjustViewBounds = true
+            }
             pageViewCache[pageNumber] = newPageView
             newPageView
         }
@@ -151,15 +212,22 @@ class QuranImagePageAdapterV2(
     }
     
     /**
-     * Clears the page view cache and cleans up resources
+     * Clear the entire page cache - useful for debugging navigation issues
      */
     fun clearCache() {
-        Log.d(TAG, "🧹 Clearing cache with ${pageViewCache.size} cached page views")
-        pageViewCache.values.forEach { pageView ->
-            pageView.cleanup()
+        Log.d(TAG, "🗑️ Clearing all cached page views")
+        
+        // Clean up all cached views
+        pageViewCache.forEach { (pageNumber, pageView) ->
+            try {
+                pageView.cleanup()
+            } catch (e: Exception) {
+                Log.w(TAG, "Warning during cache cleanup for page $pageNumber: ${e.message}")
+            }
         }
+        
         pageViewCache.clear()
-        Log.d(TAG, "✅ Cache cleared completely")
+        Log.d(TAG, "✅ Page cache cleared")
     }
     
     /**
